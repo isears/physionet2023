@@ -32,6 +32,16 @@ class PatientDataset(torch.utils.data.Dataset):
         "Cz-Pz",
     ]
 
+    static_features = {
+        "Age": lambda x: float(x),
+        "Sex": lambda x: 1.0 if x == "Male" else 0.0,
+        # TODO: could find a better way to deal with na ROSC
+        "ROSC": lambda x: float(x),
+        "OHCA": lambda x: 1.0 if x == "True" else 0.0,
+        "VFib": lambda x: 1.0 if x == "True" else 0.0,
+        "TTM": lambda x: float(x),
+    }
+
     def __init__(self, root_folder: str, quality_cutoff: float = 0.5):
 
         data_folders = list()
@@ -111,7 +121,13 @@ class PatientDataset(torch.utils.data.Dataset):
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, root_folder: str, quality_cutoff: float = 0.5, shuffle=True):
+    def __init__(
+        self,
+        root_folder: str,
+        quality_cutoff: float = 0.5,
+        shuffle=True,
+        ts_sample_len=None,
+    ):
         super().__init__(root_folder, quality_cutoff)
 
         # Generate an index of tuples (patient_id, recording_id)
@@ -126,6 +142,18 @@ class RecordingDataset(PatientDataset):
         if shuffle:
             random.shuffle(self.patient_recording_index)
 
+    def collate(self, batch):
+
+        X = torch.stack([recording_data for recording_data, _, _ in batch], dim=0)
+        y = torch.stack([label for _, _, label in batch], dim=0)
+        static_data = torch.stack([s for _, s, _ in batch], dim=0)
+
+        # Repeat static data over timeseries dimension, then concat with X
+        static_data_repeat = static_data.unsqueeze(2).repeat(1, 1, X.shape[-1])
+        X_with_static = torch.cat((X, static_data_repeat), 1)
+
+        return X_with_static, y
+
     def __len__(self):
         return len(self.patient_recording_index)
 
@@ -134,23 +162,26 @@ class RecordingDataset(PatientDataset):
         patient_metadata = self._load_patient_metadata(patient_id)
         recording_data = self._load_single_recording(patient_id, recording_id)
 
-        if patient_metadata["Outcome"] == "Good":
-            outcome = 1.0
-        elif patient_metadata["Outcome"] == "Poor":
-            outcome = 0.0
-        else:
-            raise ValueError(patient_metadata["Outcome"])
+        static_data = torch.tensor(
+            [
+                converter(patient_metadata[f])
+                for f, converter in self.static_features.items()
+            ]
+        )
 
-        return recording_data, patient_metadata["Outcome"], patient_metadata["CPC"]
+        return (
+            torch.tensor(recording_data),
+            static_data,
+            torch.tensor(float(patient_metadata["CPC"])),
+        )
 
 
 def demo(dl):
     print("Printing first few batches:")
-    for batchnum, (X, Y, Z) in enumerate(dl):
+    for batchnum, (X, Y) in enumerate(dl):
         print(f"Batch number: {batchnum}")
-        print(X[0].shape)
+        print(X.shape)
         print(Y)
-        print(Z)
 
         if batchnum == 5:
             break
@@ -163,6 +194,7 @@ if __name__ == "__main__":
         ds,
         num_workers=config.cores_available,
         batch_size=4,
+        collate_fn=ds.collate,
         pin_memory=True,
     )
 
