@@ -42,6 +42,8 @@ class PatientDataset(torch.utils.data.Dataset):
         "TTM": lambda x: float(x),
     }
 
+    full_record_len = 30000
+
     def __init__(self, root_folder: str, quality_cutoff: float = 0.5):
 
         data_folders = list()
@@ -126,7 +128,6 @@ class RecordingDataset(PatientDataset):
         root_folder: str,
         quality_cutoff: float = 0.5,
         shuffle=True,
-        ts_sample_len=None,
     ):
         super().__init__(root_folder, quality_cutoff)
 
@@ -176,8 +177,55 @@ class RecordingDataset(PatientDataset):
         )
 
 
+class SampleDataset(RecordingDataset):
+    def __init__(
+        self,
+        root_folder: str,
+        quality_cutoff: float = 0.5,
+        shuffle=True,
+        sample_len=1000,
+    ):
+        super().__init__(root_folder, quality_cutoff, shuffle)
+
+        self.sample_len = 1000
+        self.patient_recording_sample_index = list()
+
+        for patient_id, recording_id in self.patient_recording_index:
+            for sample_idx in range(0, self.full_record_len - sample_len, sample_len):
+
+                self.patient_recording_sample_index.append(
+                    (patient_id, recording_id, sample_idx)
+                )
+
+        if shuffle:
+            random.shuffle(self.patient_recording_sample_index)
+
+    def __len__(self):
+        return len(self.patient_recording_sample_index)
+
+    def __getitem__(self, index: int):
+        patient_id, recording_id, sample_idx = self.patient_recording_sample_index[
+            index
+        ]
+        patient_metadata = self._load_patient_metadata(patient_id)
+        recording_data = self._load_single_recording(patient_id, recording_id)
+        sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
+
+        static_data = torch.tensor(
+            [
+                converter(patient_metadata[f])
+                for f, converter in self.static_features.items()
+            ]
+        )
+
+        return (
+            torch.tensor(sample_data),
+            static_data,
+            torch.tensor(float(patient_metadata["CPC"])),
+        )
+
+
 def demo(dl):
-    print("Printing first few batches:")
     for batchnum, (X, Y) in enumerate(dl):
         print(f"Batch number: {batchnum}")
         print(X.shape)
@@ -188,7 +236,9 @@ def demo(dl):
 
 
 if __name__ == "__main__":
-    ds = RecordingDataset(root_folder="./data")
+    ds = SampleDataset(root_folder="./data")
+
+    print(f"Initialized dataset with length: {len(ds)}")
 
     dl = torch.utils.data.DataLoader(
         ds,
