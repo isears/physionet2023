@@ -218,7 +218,7 @@ class SampleDataset(RecordingDataset):
 
         return (
             torch.tensor(sample_data),
-            static_data,
+            torch.nan_to_num(static_data, 0.0),
             torch.tensor(float(patient_metadata["CPC"])),
         )
 
