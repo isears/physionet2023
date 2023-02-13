@@ -7,8 +7,6 @@ import torch
 from physionet2023 import config
 from physionet2023.dataProcessing.exampleUtil import *
 
-random.seed(0)
-
 
 class PatientDataset(torch.utils.data.Dataset):
     channels = [
@@ -45,7 +43,7 @@ class PatientDataset(torch.utils.data.Dataset):
     full_record_len = 30000
 
     def __init__(self, root_folder: str, quality_cutoff: float = 0.5):
-
+        random.seed(0)
         data_folders = list()
         for x in os.listdir(root_folder):
             data_folder = os.path.join(root_folder, x)
@@ -225,13 +223,13 @@ class SampleDataset(RecordingDataset):
         )
 
 
-def demo(dl):
+def demo(dl, n_batches=3):
     for batchnum, (X, Y) in enumerate(dl):
         print(f"Batch number: {batchnum}")
-        print(X.shape)
-        print(Y)
+        print(f"X shape: {X.shape}")
+        print(f"Y: {Y}")
 
-        if batchnum == 5:
+        if batchnum == n_batches:
             break
 
 
