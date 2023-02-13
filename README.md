@@ -8,3 +8,5 @@ Dataset should only require pytorch and pandas for now
 pip install --editable ./
 ln -s /gpfs/scratch/isears1/physionet2023/training ./data
 ```
+
+[Dataset demo](/datasetDemo.ipynb)
