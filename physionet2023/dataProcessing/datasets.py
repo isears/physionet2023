@@ -3,6 +3,7 @@ import random
 
 import pandas as pd
 import torch
+from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
 from physionet2023.dataProcessing.exampleUtil import *
@@ -198,6 +199,16 @@ class SampleDataset(RecordingDataset):
         if shuffle:
             random.shuffle(self.patient_recording_sample_index)
 
+    def noleak_traintest_split(self, test_size=0.1, seed=0):
+        train_pids, test_pids = train_test_split(
+            self.patient_ids, test_size=test_size, random_state=seed
+        )
+
+        train_ds = PidSampleDataset(self.root_folder, patient_ids=train_pids)
+        test_ds = PidSampleDataset(self.root_folder, patient_ids=test_pids)
+
+        return train_ds, test_ds
+
     def __len__(self):
         return len(self.patient_recording_sample_index)
 
@@ -220,6 +231,26 @@ class SampleDataset(RecordingDataset):
             torch.tensor(sample_data),
             torch.nan_to_num(static_data, 0.0),
             torch.tensor(float(patient_metadata["CPC"])),
+        )
+
+
+class PidSampleDataset(SampleDataset):
+    def __init__(
+        self,
+        root_folder: str,
+        patient_ids: list[str],
+        quality_cutoff: float = 0.5,
+        shuffle=True,
+        sample_len=1000,
+    ):
+        super().__init__(root_folder, quality_cutoff, shuffle, sample_len)
+
+        # Restricts the available data to just data associated with patient ids passed in constructor
+        self.patient_recording_sample_index = list(
+            filter(
+                lambda sample_index: sample_index[0] in patient_ids,
+                self.patient_recording_sample_index,
+            )
         )
 
 
