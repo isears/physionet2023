@@ -50,7 +50,6 @@ class PatientDataset(torch.utils.data.Dataset):
             if os.path.isdir(data_folder):
                 data_folders.append(x)
 
-        # TODO: implement optional shuffling
         self.patient_ids = sorted(data_folders)
         self.root_folder = root_folder
         self.quality_cutoff = quality_cutoff
@@ -78,6 +77,7 @@ class PatientDataset(torch.utils.data.Dataset):
         # ...seems like it is true; could take this out if performance becomes a concern
         assert sampling_frequency == 100.0
         assert len(channels) == len(self.channels)
+        assert recording_data.shape[-1] == self.full_record_len
 
         for expected_channel, actual_channel in zip(self.channels, channels):
             assert expected_channel == actual_channel
@@ -185,7 +185,7 @@ class SampleDataset(RecordingDataset):
     ):
         super().__init__(root_folder, quality_cutoff, shuffle)
 
-        self.sample_len = 1000
+        self.sample_len = sample_len
         self.patient_recording_sample_index = list()
 
         for patient_id, recording_id in self.patient_recording_index:
