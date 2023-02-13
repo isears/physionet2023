@@ -154,6 +154,16 @@ class RecordingDataset(PatientDataset):
 
         return X_with_static, y
 
+    def tst_collate(self, batch):
+        """
+        TST also needs pad_mask, even though all sequences are the same length
+        """
+        X, y = self.collate(batch)
+
+        pad_mask = torch.ones_like(X[0,0,:])
+
+        return X, pad_mask, y
+
     def __len__(self):
         return len(self.patient_recording_index)
 
