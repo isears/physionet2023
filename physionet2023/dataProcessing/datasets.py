@@ -143,7 +143,6 @@ class RecordingDataset(PatientDataset):
             random.shuffle(self.patient_recording_index)
 
     def collate(self, batch):
-
         X = torch.stack([recording_data for recording_data, _, _ in batch], dim=0)
         y = torch.stack([label for _, _, label in batch], dim=0)
         static_data = torch.stack([s for _, s, _ in batch], dim=0)
@@ -153,6 +152,16 @@ class RecordingDataset(PatientDataset):
         X_with_static = torch.cat((X, static_data_repeat), 1)
 
         return X_with_static, y
+
+    def tst_collate(self, batch):
+        """
+        TST also needs pad_mask, even though all sequences are the same length
+        """
+        X, y = self.collate(batch)
+
+        pad_mask = torch.ones_like(X[:, 0, :]).bool()
+
+        return X.permute(0, 2, 1), y, pad_mask, "DummyID"
 
     def __len__(self):
         return len(self.patient_recording_index)
@@ -191,7 +200,6 @@ class SampleDataset(RecordingDataset):
 
         for patient_id, recording_id in self.patient_recording_index:
             for sample_idx in range(0, self.full_record_len - sample_len, sample_len):
-
                 self.patient_recording_sample_index.append(
                     (patient_id, recording_id, sample_idx)
                 )
