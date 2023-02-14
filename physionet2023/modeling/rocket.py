@@ -1,7 +1,7 @@
-from sklearn.metrics import roc_auc_score
 from tsai.models.MINIROCKET import *
 
 from physionet2023.dataProcessing.datasets import just_give_me_numpy
+from physionet2023.modeling.scoringUtil import compute_challenge_score_regressor
 
 if __name__ == "__main__":
     print("[*] Loading data...")
@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
     preds = model.predict(X_test)
 
-    binary_preds = (preds - 1) / 4
-    binary_labels = y_test > 2
+    test_score = compute_challenge_score_regressor(y_test, preds)
 
-    print(f"[+] Done: AUROC (test set): {roc_auc_score(binary_labels, binary_preds)}")
+    print("[+] Done training.")
+    print(f"Competition Score (test set): {test_score}")
