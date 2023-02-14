@@ -262,6 +262,57 @@ class PidSampleDataset(SampleDataset):
         )
 
 
+def just_give_me_dataloaders(
+    data_path="./data", batch_size=32, test_size=0.1, sample_len=1000
+):
+    ds = SampleDataset(data_path, sample_len=sample_len)
+    train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
+    training_dl = torch.utils.data.DataLoader(
+        train_ds,
+        collate_fn=train_ds.tst_collate,
+        num_workers=config.cores_available,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+
+    testing_dl = torch.utils.data.DataLoader(
+        test_ds,
+        collate_fn=test_ds.tst_collate,
+        num_workers=config.cores_available,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+
+    return training_dl, testing_dl
+
+
+def just_give_me_numpy(
+    data_path="./data", num_examples=1000, test_size=0.1, sample_len=1000
+):
+    ds = SampleDataset(data_path, sample_len=sample_len)
+    train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
+    training_dl = torch.utils.data.DataLoader(
+        train_ds,
+        collate_fn=train_ds.collate,
+        num_workers=config.cores_available,
+        batch_size=int(num_examples - (num_examples * test_size)),
+        pin_memory=True,
+    )
+
+    testing_dl = torch.utils.data.DataLoader(
+        test_ds,
+        collate_fn=test_ds.collate,
+        num_workers=config.cores_available,
+        batch_size=int(num_examples * test_size),
+        pin_memory=True,
+    )
+
+    X_train, y_train = next(iter(training_dl))
+    X_test, y_test = next(iter(testing_dl))
+
+    return X_train.numpy(), y_train.numpy(), X_test.numpy(), y_test.numpy()
+
+
 def demo(dl, n_batches=3):
     for batchnum, (X, Y) in enumerate(dl):
         print(f"Batch number: {batchnum}")
