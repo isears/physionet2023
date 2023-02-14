@@ -19,17 +19,17 @@ if __name__ == "__main__":
     train_ds, test_ds = ds.noleak_traintest_split()
 
     print(f"Training dataset size: {len(train_ds)}")
-    print(f"Testing dataset size: len{test_ds}")
+    print(f"Testing dataset size: {len(test_ds)}")
 
     tst = TSTransformerEncoderClassiregressor(
         feat_dim=len(ds.channels) + len(ds.static_features),
         max_len=ds.sample_len,
         d_model=128,
         n_heads=16,
-        num_layers=3,
+        num_layers=5,
         dim_feedforward=256,
-        num_classes=2,
-        dropout=0.1,
+        num_classes=1,
+        dropout=0.02,
         pos_encoding="fixed",
         activation="gelu",
         norm="BatchNorm",
@@ -40,7 +40,7 @@ if __name__ == "__main__":
         train_ds,
         collate_fn=train_ds.tst_collate,
         num_workers=config.cores_available,
-        batch_size=128,
+        batch_size=8,
         pin_memory=True,
     )
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
         test_ds,
         collate_fn=test_ds.tst_collate,
         num_workers=config.cores_available,
-        batch_size=128,
+        batch_size=8,
         pin_memory=True,
     )
 
