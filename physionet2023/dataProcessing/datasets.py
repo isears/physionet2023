@@ -54,6 +54,7 @@ class PatientDataset(torch.utils.data.Dataset):
         self.patient_ids = sorted(data_folders)
         self.root_folder = root_folder
         self.quality_cutoff = quality_cutoff
+        self.features_dim = len(self.static_features) + len(self.channels)
 
     def _load_recording_metadata(self, patient_id) -> pd.DataFrame:
         recording_metadata_file = os.path.join(
@@ -208,12 +209,19 @@ class SampleDataset(RecordingDataset):
             random.shuffle(self.patient_recording_sample_index)
 
     def noleak_traintest_split(self, test_size=0.1, seed=0):
+        """
+        Splits datasets based on pantients, not on samples.
+        This ensures samples from a single patient don't appear in both training and validation datasets, which could lead to over-fitting
+        """
         train_pids, test_pids = train_test_split(
             self.patient_ids, test_size=test_size, random_state=seed
         )
 
         train_ds = PidSampleDataset(self.root_folder, patient_ids=train_pids)
         test_ds = PidSampleDataset(self.root_folder, patient_ids=test_pids)
+
+        for pid in test_ds.patient_ids:
+            assert pid not in train_ds.patient_ids
 
         return train_ds, test_ds
 
@@ -260,6 +268,8 @@ class PidSampleDataset(SampleDataset):
                 self.patient_recording_sample_index,
             )
         )
+
+        self.patient_ids = patient_ids
 
 
 def just_give_me_dataloaders(

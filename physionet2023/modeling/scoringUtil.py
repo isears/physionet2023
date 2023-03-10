@@ -1,4 +1,5 @@
 import numpy as np
+from sklearn.metrics import roc_auc_score
 
 
 # The original compute challenge score function from the physionet repository
@@ -70,3 +71,11 @@ def compute_challenge_score_regressor(labels, outputs):
     binary_labels = (labels > 2).astype("float")
 
     return compute_challenge_score(binary_labels, binary_outputs)
+
+def compute_auroc_regressor(labels, outputs):
+    binary_outputs = np.clip((outputs - 1) / 4, 0.0, 1.0)
+    binary_labels = (labels > 2).astype("float")
+
+    return roc_auc_score(binary_labels, binary_outputs)
+
+    

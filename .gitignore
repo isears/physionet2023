@@ -4,3 +4,4 @@
 **/*.egg-info
 /data
 /logs
+/lightning_logs
