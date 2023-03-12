@@ -72,10 +72,12 @@ def compute_challenge_score_regressor(labels, outputs):
 
     return compute_challenge_score(binary_labels, binary_outputs)
 
+
 def compute_auroc_regressor(labels, outputs):
     binary_outputs = np.clip((outputs - 1) / 4, 0.0, 1.0)
     binary_labels = (labels > 2).astype("float")
 
-    return roc_auc_score(binary_labels, binary_outputs)
-
-    
+    try:
+        return roc_auc_score(binary_labels, binary_outputs)
+    except ValueError:
+        return 0.5

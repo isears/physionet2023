@@ -12,9 +12,7 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor,
-    compute_challenge_score_regressor,
-)
+    compute_auroc_regressor, compute_challenge_score_regressor)
 
 
 class LitTst(pl.LightningModule):
@@ -122,11 +120,11 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 
 if __name__ == "__main__":
     problem_params = {
-        "lr": 0.001,
+        "lr": 5e-3,
         "dropout": 0.1,
         "d_model_multiplier": 8,
-        "num_layers": 3,
-        "n_heads": 16,
+        "num_layers": 1,
+        "n_heads": 8,
         "dim_feedforward": 256,
         "pos_encoding": "learnable",
         "activation": "gelu",
@@ -148,6 +146,7 @@ if __name__ == "__main__":
         batch_size=tst_config.batch_size,
         sample_len=1000,
         test_subsample=0.1,
+        include_static=False,
     )
 
     model = lightning_tst_factory(tst_config, training_dl)
@@ -161,7 +160,7 @@ if __name__ == "__main__":
         accelerator="gpu",
         devices=config.gpus_available,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=5),
             checkpoint_callback,
         ],
         enable_checkpointing=True,
@@ -175,8 +174,8 @@ if __name__ == "__main__":
         val_dataloaders=valid_dl,
     )
 
-    best_model = LitTst.load_from_checkpoint(checkpoint_callback.best_model_path)
-    results = trainer.test(model=best_model, dataloaders=valid_dl)
+    # best_model = LitTst.load_from_checkpoint(checkpoint_callback.best_model_path)
+    # results = trainer.test(model=best_model, dataloaders=valid_dl)
 
-    print(type(results))
-    print(results)
+    # print(type(results))
+    # print(results)

@@ -44,7 +44,9 @@ class PatientDataset(torch.utils.data.Dataset):
 
     full_record_len = 30000
 
-    def __init__(self, root_folder: str, quality_cutoff: float = 0.5):
+    def __init__(
+        self, root_folder: str, quality_cutoff: float = 0.5, include_static: bool = True
+    ):
         random.seed(0)
         data_folders = list()
         for x in os.listdir(root_folder):
@@ -55,7 +57,12 @@ class PatientDataset(torch.utils.data.Dataset):
         self.patient_ids = sorted(data_folders)
         self.root_folder = root_folder
         self.quality_cutoff = quality_cutoff
-        self.features_dim = len(self.static_features) + len(self.channels)
+
+        self.include_static = include_static
+        if include_static:
+            self.features_dim = len(self.static_features) + len(self.channels)
+        else:
+            self.features_dim = len(self.channels)
 
     def _load_recording_metadata(self, patient_id) -> pd.DataFrame:
         recording_metadata_file = os.path.join(
@@ -127,10 +134,12 @@ class RecordingDataset(PatientDataset):
     def __init__(
         self,
         root_folder: str,
-        quality_cutoff: float = 0.5,
         shuffle=True,
+        **super_kwargs
     ):
-        super().__init__(root_folder, quality_cutoff)
+        super().__init__(root_folder)
+
+        self.shuffle = shuffle
 
         # Generate an index of tuples (patient_id, recording_id)
         self.patient_recording_index = list()
@@ -141,19 +150,23 @@ class RecordingDataset(PatientDataset):
             for recording_id in recording_metadata["Record"].to_list():
                 self.patient_recording_index.append((pid, recording_id))
 
-        if shuffle:
+        if self.shuffle:
             random.shuffle(self.patient_recording_index)
 
     def collate(self, batch):
         X = torch.stack([recording_data for recording_data, _, _ in batch], dim=0)
         y = torch.stack([label for _, _, label in batch], dim=0)
-        static_data = torch.stack([s for _, s, _ in batch], dim=0)
 
-        # Repeat static data over timeseries dimension, then concat with X
-        static_data_repeat = static_data.unsqueeze(2).repeat(1, 1, X.shape[-1])
-        X_with_static = torch.cat((X, static_data_repeat), 1)
+        if self.include_static:
+            static_data = torch.stack([s for _, s, _ in batch], dim=0)
 
-        return X_with_static, y
+            # Repeat static data over timeseries dimension, then concat with X
+            static_data_repeat = static_data.unsqueeze(2).repeat(1, 1, X.shape[-1])
+            X_with_static = torch.cat((X, static_data_repeat), 1)
+
+            return X_with_static, y
+        else:
+            return X, y
 
     def tst_collate(self, batch):
         """
@@ -191,13 +204,12 @@ class SampleDataset(RecordingDataset):
     def __init__(
         self,
         root_folder: str,
-        quality_cutoff: float = 0.5,
-        shuffle=True,
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
+        **super_kwargs
     ):
-        super().__init__(root_folder, quality_cutoff, shuffle)
+        super().__init__(root_folder, **super_kwargs)
 
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()
@@ -208,7 +220,7 @@ class SampleDataset(RecordingDataset):
                     (patient_id, recording_id, sample_idx)
                 )
 
-        if shuffle:
+        if self.shuffle:
             random.shuffle(self.patient_recording_sample_index)
 
         self.resample_factor = resample_factor
@@ -272,15 +284,8 @@ class SampleDataset(RecordingDataset):
 
 
 class PidSampleDataset(SampleDataset):
-    def __init__(
-        self,
-        root_folder: str,
-        patient_ids: list[str],
-        quality_cutoff: float = 0.5,
-        shuffle=True,
-        sample_len=1000,
-    ):
-        super().__init__(root_folder, quality_cutoff, shuffle, sample_len)
+    def __init__(self, root_folder: str, patient_ids: list[str], **super_kwargs):
+        super().__init__(root_folder, **super_kwargs)
 
         # Restricts the available data to just data associated with patient ids passed in constructor
         self.patient_recording_sample_index = list(
@@ -299,10 +304,12 @@ def just_give_me_dataloaders(
     test_size=0.1,
     sample_len=1000,
     test_subsample=1.0,
-    resample_factor=None,
+    **ds_kwargs,
 ):
     ds = SampleDataset(
-        data_path, sample_len=sample_len, resample_factor=resample_factor
+        data_path,
+        sample_len=sample_len,
+        **ds_kwargs,
     )
     train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
 
