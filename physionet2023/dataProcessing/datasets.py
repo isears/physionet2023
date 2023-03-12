@@ -195,6 +195,7 @@ class SampleDataset(RecordingDataset):
         shuffle=True,
         sample_len=1000,
         resample_factor: int = None,
+        normalize=True,
     ):
         super().__init__(root_folder, quality_cutoff, shuffle)
 
@@ -211,6 +212,7 @@ class SampleDataset(RecordingDataset):
             random.shuffle(self.patient_recording_sample_index)
 
         self.resample_factor = resample_factor
+        self.normalize = normalize
 
     def noleak_traintest_split(self, test_size=0.1, seed=0):
         """
@@ -248,6 +250,10 @@ class SampleDataset(RecordingDataset):
             assert sample_data.shape[-1] == self.sample_len
         else:
             sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
+
+        if self.normalize:
+            sample_data = (sample_data - sample_data.mean()) / (sample_data.std())
+            sample_data = np.nan_to_num(sample_data)  # Weirdly some data has std of 0
 
         static_data = torch.tensor(
             [
@@ -328,9 +334,15 @@ def just_give_me_dataloaders(
 
 
 def just_give_me_numpy(
-    data_path="./data", num_examples=1000, test_size=0.1, sample_len=1000
+    data_path="./data",
+    num_examples=1000,
+    test_size=0.1,
+    sample_len=1000,
+    resample_factor=None,
 ):
-    ds = SampleDataset(data_path, sample_len=sample_len)
+    ds = SampleDataset(
+        data_path, sample_len=sample_len, resample_factor=resample_factor
+    )
     train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
     training_dl = torch.utils.data.DataLoader(
         train_ds,

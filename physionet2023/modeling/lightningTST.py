@@ -22,7 +22,7 @@ class LitTst(pl.LightningModule):
         self, tst: TSTransformerEncoderClassiregressor, tst_config: TSTConfig
     ) -> None:
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters(ignore=["tst"])
         self.tst = tst
 
         self.tst_config = tst_config
@@ -128,7 +128,6 @@ if __name__ == "__main__":
         "num_layers": 3,
         "n_heads": 16,
         "dim_feedforward": 256,
-        "batch_size": 86,
         "pos_encoding": "learnable",
         "activation": "gelu",
         "norm": "LayerNorm",
@@ -149,7 +148,6 @@ if __name__ == "__main__":
         batch_size=tst_config.batch_size,
         sample_len=1000,
         test_subsample=0.1,
-        resample_factor=5,
     )
 
     model = lightning_tst_factory(tst_config, training_dl)
