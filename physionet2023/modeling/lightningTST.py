@@ -12,9 +12,7 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor,
-    compute_challenge_score_regressor,
-)
+    compute_auroc_regressor, compute_challenge_score_regressor)
 
 
 class LitTst(pl.LightningModule):
@@ -78,12 +76,12 @@ class LitTst(pl.LightningModule):
         auc = self.auroc_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("AUC", auc)
+        self.log("Validation AUC", auc)
 
         comp = self.competition_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("Competition Score", comp)
+        self.log("Validation Competition Score", comp)
 
     def test_step(self, batch, batch_idx):
         X, y, pm, IDx = batch
@@ -97,12 +95,12 @@ class LitTst(pl.LightningModule):
         auc = self.auroc_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("AUC", auc)
+        self.log("Test AUC", auc)
 
         comp = self.competition_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("Competiton Metric", comp)
+        self.log("Test Competiton Score", comp)
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -122,7 +120,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 
 if __name__ == "__main__":
     problem_params = {
-        "lr": 0.001,
+        "lr": 0.0001,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 3,
@@ -139,8 +137,8 @@ if __name__ == "__main__":
     tst_config = TSTConfig(save_path="lightningTst", **problem_params)
 
     wandb_logger = WandbLogger(
-        project="physionet2023",
-        config=tst_config.generate_model_params(),
+        project="physionet2023wandb",
+        config=tst_config,
         group="TST",
         job_type="train",
     )

@@ -3,6 +3,7 @@ import random
 
 import pandas as pd
 import torch
+from scipy.signal import decimate
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
@@ -193,6 +194,7 @@ class SampleDataset(RecordingDataset):
         quality_cutoff: float = 0.5,
         shuffle=True,
         sample_len=1000,
+        resample_factor: int = None,
     ):
         super().__init__(root_folder, quality_cutoff, shuffle)
 
@@ -207,6 +209,8 @@ class SampleDataset(RecordingDataset):
 
         if shuffle:
             random.shuffle(self.patient_recording_sample_index)
+
+        self.resample_factor = resample_factor
 
     def noleak_traintest_split(self, test_size=0.1, seed=0):
         """
@@ -234,7 +238,16 @@ class SampleDataset(RecordingDataset):
         ]
         patient_metadata = self._load_patient_metadata(patient_id)
         recording_data = self._load_single_recording(patient_id, recording_id)
-        sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
+
+        if self.resample_factor:
+            sample_data = recording_data[
+                :, sample_idx : sample_idx + self.resample_factor * self.sample_len
+            ]
+            sample_data = decimate(sample_data, self.resample_factor)
+
+            assert sample_data.shape[-1] == self.sample_len
+        else:
+            sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
 
         static_data = torch.tensor(
             [
@@ -243,8 +256,10 @@ class SampleDataset(RecordingDataset):
             ]
         )
 
+        # NOTE: copy was necessary to prevent "negative stride error" after decimation
+        # Not sure what the performance implications are
         return (
-            torch.tensor(sample_data),
+            torch.tensor(sample_data.copy()),
             torch.nan_to_num(static_data, 0.0),
             torch.tensor(float(patient_metadata["CPC"])),
         )
