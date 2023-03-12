@@ -11,5 +11,6 @@
 export PYTHONUNBUFFERED=TRUE
 
 
-echo "Establishing connection back to $SLURM_SUBMIT_HOST:63325"
-~/anaconda3/envs/ecmo-interpretability/bin/python -m debugpy --connect $SLURM_SUBMIT_HOST:63325 --wait-for-client $1
+echo "Establishing connection back to $SLURM_SUBMIT_HOST:53321"
+sleep 2
+~/anaconda3/envs/ecmo-interpretability/bin/python -m debugpy --connect $SLURM_SUBMIT_HOST:53321 --wait-for-client $1

@@ -130,13 +130,64 @@ class PatientDataset(torch.utils.data.Dataset):
         return patient_metadata, recording_metadata, recordings
 
 
+class PatientTrainingDataset(PatientDataset):
+    def __init__(self, root_folder: str, sample_len: int, normalize=True, **kwargs):
+        super().__init__(root_folder, **kwargs)
+
+        assert sample_len <= self.full_record_len
+
+        self.sample_len = sample_len
+        self.normalize = normalize
+
+    def collate(self, batch):
+        X = torch.stack([recording_data for recording_data, _ in batch], dim=0)
+        y = torch.stack([label for _, label in batch], dim=0)
+
+        return X, y
+
+    def tst_collate(self, batch):
+        """
+        TST also needs pad_mask, even though all sequences are the same length
+        """
+        X, y = self.collate(batch)
+
+        pad_mask = torch.ones_like(X[:, 0, :]).bool()
+
+        return X.permute(0, 2, 1), y, pad_mask, "DummyID"
+
+    def __getitem__(self, index: int):
+        patient_id = self.patient_ids[index]
+        patient_metadata = self._load_patient_metadata(patient_id)
+        recording_metadata = self._load_recording_metadata(patient_id)
+
+        # Only the finest recordings will do
+        # TODO: could iterate through all recordings and select the one with highest StD or something
+        # but that would be much more computationally expensive
+        recording_id = recording_metadata.nlargest(1, "Quality")["Record"].item()
+
+        recording_data = self._load_single_recording(patient_id, recording_id)
+
+        if self.normalize:
+            recording_data = (
+                recording_data - recording_data.mean()
+            ) / recording_data.std()
+
+        # Take sequence from the middle of the recording
+        left_margin = int((self.full_record_len - self.sample_len) / 2)
+        right_margin = (self.full_record_len - self.sample_len) - left_margin
+
+        recording_sample = recording_data[
+            :, left_margin : (left_margin + self.sample_len)
+        ]
+
+        return (
+            torch.tensor(recording_sample),
+            torch.tensor(float(patient_metadata["CPC"])),
+        )
+
+
 class RecordingDataset(PatientDataset):
-    def __init__(
-        self,
-        root_folder: str,
-        shuffle=True,
-        **super_kwargs
-    ):
+    def __init__(self, root_folder: str, shuffle=True, **super_kwargs):
         super().__init__(root_folder)
 
         self.shuffle = shuffle
@@ -207,7 +258,7 @@ class SampleDataset(RecordingDataset):
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
-        **super_kwargs
+        **super_kwargs,
     ):
         super().__init__(root_folder, **super_kwargs)
 
@@ -374,7 +425,7 @@ def just_give_me_numpy(
 
 
 def demo(dl, n_batches=3):
-    for batchnum, (X, Y) in enumerate(dl):
+    for batchnum, (X, Y, pm, id) in enumerate(dl):
         print(f"Batch number: {batchnum}")
         print(f"X shape: {X.shape}")
         print(f"Y: {Y}")
@@ -384,7 +435,7 @@ def demo(dl, n_batches=3):
 
 
 if __name__ == "__main__":
-    ds = SampleDataset(root_folder="./data")
+    ds = PatientTrainingDataset(root_folder="./data", sample_len=2000)
 
     print(f"Initialized dataset with length: {len(ds)}")
 
@@ -392,7 +443,7 @@ if __name__ == "__main__":
         ds,
         num_workers=config.cores_available,
         batch_size=4,
-        collate_fn=ds.collate,
+        collate_fn=ds.tst_collate,
         pin_memory=True,
     )
 
