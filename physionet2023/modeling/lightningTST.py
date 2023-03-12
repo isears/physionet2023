@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor, compute_challenge_score_regressor)
+    compute_auroc_regressor,
+    compute_challenge_score_regressor,
+)
 
 
 class LitTst(pl.LightningModule):
@@ -39,10 +41,10 @@ class LitTst(pl.LightningModule):
         self.log(
             "val_loss",
             val_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
+            # on_step=False,
+            # on_epoch=True,
+            # prog_bar=True,
+            # sync_dist=True,
         )
         return {"loss": val_loss, "preds": preds, "target": y}
 
@@ -65,10 +67,10 @@ class LitTst(pl.LightningModule):
         self.log(
             "val_loss",
             val_loss,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            sync_dist=True,
+            # on_step=False,
+            # on_epoch=True,
+            # prog_bar=True,
+            # sync_dist=True,
         )
         return {"loss": val_loss, "preds": preds, "target": y}
 
@@ -76,12 +78,12 @@ class LitTst(pl.LightningModule):
         auc = self.auroc_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("AUC", auc, prog_bar=True)
+        self.log("AUC", auc)
 
         comp = self.competition_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("Competition Score", comp, prog_bar=True)
+        self.log("Competition Score", comp)
 
     def test_step(self, batch, batch_idx):
         X, y, pm, IDx = batch
@@ -144,7 +146,7 @@ if __name__ == "__main__":
     )
 
     training_dl, valid_dl = just_give_me_dataloaders(
-        batch_size=tst_config.batch_size, sample_len=1000
+        batch_size=tst_config.batch_size, sample_len=1000, test_subsample=0.1
     )
 
     model = lightning_tst_factory(tst_config, training_dl)

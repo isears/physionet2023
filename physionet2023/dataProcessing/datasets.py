@@ -273,10 +273,23 @@ class PidSampleDataset(SampleDataset):
 
 
 def just_give_me_dataloaders(
-    data_path="./data", batch_size=32, test_size=0.1, sample_len=1000
+    data_path="./data",
+    batch_size=32,
+    test_size=0.1,
+    sample_len=1000,
+    test_subsample=1.0,
 ):
     ds = SampleDataset(data_path, sample_len=sample_len)
     train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
+
+    subsample_length = int(len(test_ds) * test_subsample)
+
+    test_ds_subsampled, _ = torch.utils.data.random_split(
+        test_ds,
+        [subsample_length, len(test_ds) - subsample_length],
+        generator=torch.Generator().manual_seed(42),
+    )
+
     training_dl = torch.utils.data.DataLoader(
         train_ds,
         collate_fn=train_ds.tst_collate,
@@ -286,7 +299,7 @@ def just_give_me_dataloaders(
     )
 
     testing_dl = torch.utils.data.DataLoader(
-        test_ds,
+        test_ds_subsampled,
         collate_fn=test_ds.tst_collate,
         num_workers=config.cores_available,
         batch_size=batch_size,
