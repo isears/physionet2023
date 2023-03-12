@@ -1,20 +1,18 @@
 import pandas as pd
 import pytorch_lightning as pl
 import torch
-import torchmetrics
 from mvtst.models import TSTConfig
 from mvtst.models.loss import NoFussCrossEntropyLoss
 from mvtst.models.ts_transformer import TSTransformerEncoderClassiregressor
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor,
-    compute_challenge_score_regressor,
-)
+    compute_auroc_regressor, compute_challenge_score_regressor)
 
 
 class LitTst(pl.LightningModule):
@@ -30,6 +28,23 @@ class LitTst(pl.LightningModule):
 
         self.auroc_metric = compute_auroc_regressor
         self.competition_metric = compute_challenge_score_regressor
+
+    def _do_scoring(
+        self, batch, batch_idx
+    ):  # TODO: use this instead of re-writing every time we want a full eval
+        X, y, pm, IDs = batch
+        preds = torch.squeeze(self.tst(X, pm))
+
+        val_loss = torch.nn.functional.mse_loss(preds, y)
+        self.log(
+            "val_loss",
+            val_loss,
+            on_step=False,
+            on_epoch=True,
+            prog_bar=True,
+            sync_dist=True,
+        )
+        return {"loss": val_loss, "preds": preds, "target": y}
 
     def training_step(self, batch, batch_idx):
         X, y, pm, IDs = batch
@@ -61,12 +76,12 @@ class LitTst(pl.LightningModule):
         auc = self.auroc_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("AUC", auc)
+        self.log("AUC", auc, prog_bar=True)
 
         comp = self.competition_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("Competition Score", comp)
+        self.log("Competition Score", comp, prog_bar=True)
 
     def test_step(self, batch, batch_idx):
         X, y, pm, IDx = batch
@@ -118,9 +133,18 @@ if __name__ == "__main__":
         "optimizer_name": "AdamW",
         "batch_size": 16,
     }
+
     tst_config = TSTConfig(save_path="lightningTst", **problem_params)
+
+    wandb_logger = WandbLogger(
+        project="physionet2023",
+        config=tst_config.generate_model_params(),
+        group="TST",
+        job_type="train",
+    )
+
     training_dl, valid_dl = just_give_me_dataloaders(
-        batch_size=tst_config.batch_size, sample_len=500
+        batch_size=tst_config.batch_size, sample_len=1000
     )
 
     model = lightning_tst_factory(tst_config, training_dl)
@@ -138,6 +162,8 @@ if __name__ == "__main__":
             checkpoint_callback,
         ],
         enable_checkpointing=True,
+        val_check_interval=0.005,
+        logger=wandb_logger,
     )
 
     trainer.fit(
