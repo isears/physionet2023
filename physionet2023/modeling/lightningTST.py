@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor, compute_challenge_score_regressor)
+    compute_auroc_regressor,
+    compute_challenge_score_regressor,
+)
 
 
 class LitTst(pl.LightningModule):
@@ -120,7 +122,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 
 if __name__ == "__main__":
     problem_params = {
-        "lr": 0.0001,
+        "lr": 0.001,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 3,
@@ -144,7 +146,10 @@ if __name__ == "__main__":
     )
 
     training_dl, valid_dl = just_give_me_dataloaders(
-        batch_size=tst_config.batch_size, sample_len=1000, test_subsample=0.1
+        batch_size=tst_config.batch_size,
+        sample_len=1000,
+        test_subsample=0.1,
+        resample_factor=5,
     )
 
     model = lightning_tst_factory(tst_config, training_dl)

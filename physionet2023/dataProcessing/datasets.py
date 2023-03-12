@@ -293,8 +293,11 @@ def just_give_me_dataloaders(
     test_size=0.1,
     sample_len=1000,
     test_subsample=1.0,
+    resample_factor=None,
 ):
-    ds = SampleDataset(data_path, sample_len=sample_len)
+    ds = SampleDataset(
+        data_path, sample_len=sample_len, resample_factor=resample_factor
+    )
     train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
 
     subsample_length = int(len(test_ds) * test_subsample)
