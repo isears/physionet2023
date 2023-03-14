@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor, compute_challenge_score_regressor)
+    compute_auroc_regressor,
+    compute_challenge_score_regressor,
+)
 
 
 class LitTst(pl.LightningModule):
@@ -39,6 +41,7 @@ class LitTst(pl.LightningModule):
         self.log(
             "val_loss",
             val_loss,
+            batch_size=self.tst_config.batch_size
             # on_step=False,
             # on_epoch=True,
             # prog_bar=True,
@@ -54,7 +57,7 @@ class LitTst(pl.LightningModule):
 
         loss = torch.nn.functional.mse_loss(preds, y)
 
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, batch_size=self.tst_config.batch_size)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -120,7 +123,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 
 if __name__ == "__main__":
     problem_params = {
-        "lr": 5e-3,
+        "lr": 1e-4,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 1,
@@ -144,8 +147,8 @@ if __name__ == "__main__":
 
     training_dl, valid_dl = just_give_me_dataloaders(
         batch_size=tst_config.batch_size,
-        sample_len=1000,
-        test_subsample=0.1,
+        sample_len=3000,
+        test_subsample=0.25,
         include_static=False,
     )
 
