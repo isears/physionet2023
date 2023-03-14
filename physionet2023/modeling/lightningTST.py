@@ -10,9 +10,11 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
-from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
+from physionet2023.dataProcessing.datasets import PatientTrainingDataset
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor, compute_challenge_score_regressor)
+    compute_auroc_regressor,
+    compute_challenge_score_regressor,
+)
 
 
 class LitTst(pl.LightningModule):
@@ -54,7 +56,13 @@ class LitTst(pl.LightningModule):
 
         loss = torch.nn.functional.mse_loss(preds, y)
 
-        self.log("train_loss", loss)
+        self.log(
+            "train_loss",
+            loss,
+            batch_size=self.tst_config.batch_size,
+            on_step=True,
+            on_epoch=True,
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -65,8 +73,9 @@ class LitTst(pl.LightningModule):
         self.log(
             "val_loss",
             val_loss,
-            # on_step=False,
-            # on_epoch=True,
+            on_step=False,
+            on_epoch=True,
+            batch_size=self.tst_config.batch_size,
             # prog_bar=True,
             # sync_dist=True,
         )
@@ -106,11 +115,45 @@ class LitTst(pl.LightningModule):
         return self.tst_config.generate_optimizer(self.parameters())
 
 
-def lightning_tst_factory(tst_config: TSTConfig, ds):
+def dataloader_factory(batch_size=16):
+    ds = PatientTrainingDataset(
+        "./data",
+        sample_len=4000,
+        include_static=False,
+    )
+
+    valid_ds_length = int(len(ds) * 0.1)
+
+    train_ds, valid_ds = torch.utils.data.random_split(
+        ds,
+        [valid_ds_length, len(ds) - valid_ds_length],
+        generator=torch.Generator().manual_seed(42),
+    )
+
+    training_dl = torch.utils.data.DataLoader(
+        train_ds,
+        collate_fn=ds.tst_collate,
+        num_workers=config.cores_available,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+
+    valid_dl = torch.utils.data.DataLoader(
+        valid_ds,
+        collate_fn=ds.tst_collate,
+        num_workers=config.cores_available,
+        batch_size=batch_size,
+        pin_memory=True,
+    )
+
+    return training_dl, valid_dl
+
+
+def lightning_tst_factory(tst_config: TSTConfig, dl):
     tst = TSTransformerEncoderClassiregressor(
         **tst_config.generate_model_params(),
-        feat_dim=ds.dataset.features_dim,
-        max_len=ds.dataset.sample_len
+        feat_dim=dl.dataset.dataset.features_dim,
+        max_len=dl.dataset.dataset.sample_len
     )
 
     lightning_wrapper = LitTst(tst, tst_config)
@@ -120,7 +163,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 
 if __name__ == "__main__":
     problem_params = {
-        "lr": 5e-3,
+        "lr": 1e-4,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 1,
@@ -142,11 +185,8 @@ if __name__ == "__main__":
         job_type="train",
     )
 
-    training_dl, valid_dl = just_give_me_dataloaders(
+    training_dl, valid_dl = dataloader_factory(
         batch_size=tst_config.batch_size,
-        sample_len=1000,
-        test_subsample=0.1,
-        include_static=False,
     )
 
     model = lightning_tst_factory(tst_config, training_dl)
@@ -154,7 +194,7 @@ if __name__ == "__main__":
     checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
 
     trainer = pl.Trainer(
-        max_epochs=10,
+        max_epochs=100,
         gradient_clip_val=4.0,
         gradient_clip_algorithm="norm",
         accelerator="gpu",
@@ -164,8 +204,9 @@ if __name__ == "__main__":
             checkpoint_callback,
         ],
         enable_checkpointing=True,
-        val_check_interval=0.005,
+        # val_check_interval=0.005,
         logger=wandb_logger,
+        log_every_n_steps=1,
     )
 
     trainer.fit(

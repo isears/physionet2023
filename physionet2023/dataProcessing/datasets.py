@@ -64,6 +64,16 @@ class PatientDataset(torch.utils.data.Dataset):
         else:
             self.features_dim = len(self.channels)
 
+        # Do quality control to ensure all patients have usable data based on quality cutoff
+        passed_qc = list()
+
+        for pid in self.patient_ids:
+            recording_metadata = self._load_recording_metadata(pid)
+            if len(recording_metadata) > 0:
+                passed_qc.append(pid)
+
+        self.patient_ids = passed_qc
+
     def _load_recording_metadata(self, patient_id) -> pd.DataFrame:
         recording_metadata_file = os.path.join(
             self.root_folder, patient_id, patient_id + ".tsv"
@@ -134,6 +144,9 @@ class PatientTrainingDataset(PatientDataset):
     def __init__(self, root_folder: str, sample_len: int, normalize=True, **kwargs):
         super().__init__(root_folder, **kwargs)
 
+        if self.include_static:
+            raise NotImplementedError
+
         assert sample_len <= self.full_record_len
 
         self.sample_len = sample_len
@@ -163,6 +176,8 @@ class PatientTrainingDataset(PatientDataset):
         # Only the finest recordings will do
         # TODO: could iterate through all recordings and select the one with highest StD or something
         # but that would be much more computationally expensive
+        assert len(recording_metadata) > 0, f"No recording metadata: {patient_id}"
+        assert "Quality" in recording_metadata.columns
         recording_id = recording_metadata.nlargest(1, "Quality")["Record"].item()
 
         recording_data = self._load_single_recording(patient_id, recording_id)
@@ -435,7 +450,7 @@ def demo(dl, n_batches=3):
 
 
 if __name__ == "__main__":
-    ds = PatientTrainingDataset(root_folder="./data", sample_len=2000)
+    ds = PatientTrainingDataset(root_folder="./data", sample_len=30000)
 
     print(f"Initialized dataset with length: {len(ds)}")
 
