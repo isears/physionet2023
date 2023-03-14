@@ -64,6 +64,16 @@ class PatientDataset(torch.utils.data.Dataset):
         else:
             self.features_dim = len(self.channels)
 
+        # Do quality control to ensure all patients have usable data based on quality cutoff
+        passed_qc = list()
+
+        for pid in self.patient_ids:
+            recording_metadata = self._load_recording_metadata(pid)
+            if len(recording_metadata) > 0:
+                passed_qc.append(pid)
+
+        self.patient_ids = passed_qc
+
     def _load_recording_metadata(self, patient_id) -> pd.DataFrame:
         recording_metadata_file = os.path.join(
             self.root_folder, patient_id, patient_id + ".tsv"
@@ -133,6 +143,9 @@ class PatientDataset(torch.utils.data.Dataset):
 class PatientTrainingDataset(PatientDataset):
     def __init__(self, root_folder: str, sample_len: int, normalize=True, **kwargs):
         super().__init__(root_folder, **kwargs)
+
+        if self.include_static:
+            raise NotImplementedError
 
         assert sample_len <= self.full_record_len
 
