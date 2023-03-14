@@ -268,45 +268,31 @@ class RecordingDataset(PatientDataset):
 class SampleDataset(RecordingDataset):
     def __init__(
         self,
-        root_folder: str,
+        pids: list,
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
         **super_kwargs,
     ):
-        super().__init__(root_folder, **super_kwargs)
+        super().__init__("./data", **super_kwargs)
 
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()
 
         for patient_id, recording_id in self.patient_recording_index:
-            for sample_idx in range(0, self.full_record_len - sample_len, sample_len):
-                self.patient_recording_sample_index.append(
-                    (patient_id, recording_id, sample_idx)
-                )
+            if patient_id in pids:
+                for sample_idx in range(
+                    0, self.full_record_len - sample_len, sample_len
+                ):
+                    self.patient_recording_sample_index.append(
+                        (patient_id, recording_id, sample_idx)
+                    )
 
         if self.shuffle:
             random.shuffle(self.patient_recording_sample_index)
 
         self.resample_factor = resample_factor
         self.normalize = normalize
-
-    def noleak_traintest_split(self, test_size=0.1, seed=0):
-        """
-        Splits datasets based on pantients, not on samples.
-        This ensures samples from a single patient don't appear in both training and validation datasets, which could lead to over-fitting
-        """
-        train_pids, test_pids = train_test_split(
-            self.patient_ids, test_size=test_size, random_state=seed
-        )
-
-        train_ds = PidSampleDataset(self.root_folder, patient_ids=train_pids)
-        test_ds = PidSampleDataset(self.root_folder, patient_ids=test_pids)
-
-        for pid in test_ds.patient_ids:
-            assert pid not in train_ds.patient_ids
-
-        return train_ds, test_ds
 
     def __len__(self):
         return len(self.patient_recording_sample_index)
@@ -349,58 +335,72 @@ class SampleDataset(RecordingDataset):
 
 
 class FftDataset(SampleDataset):
-    def __init__(self, root_folder: str, **super_kwargs):
-        super().__init__(root_folder, **super_kwargs)
+    def __init__(self, pids: list, **super_kwargs):
+        super().__init__(pids, **super_kwargs)
+
+        if self.resample_factor:
+            raise NotImplementedError("FFT automatically downsamples to sample_len")
 
     def __getitem__(self, index: int):
         # TODO: we can do more here by compressing the entire sequence down to an appropriate length by downsampling the FFT
-        X, static_data, y = super().__getitem__(index)
+        patient_id, recording_id, sample_idx = self.patient_recording_sample_index[
+            index
+        ]
+        patient_metadata = self._load_patient_metadata(patient_id)
+        recording_data = self._load_single_recording(patient_id, recording_id)
 
-        X_fft = np.zeros_like(X)
-        for channel_idx in range(0, X.shape[-1]):
-            X_fft[:, channel_idx] = np.abs(np.fft.fft(X[:, channel_idx]))
+        if self.normalize:
+            raise NotImplementedError("Normalize not implemented for fft (yet)")
 
-        return X_fft, static_data, y
+        sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
+        X_fft = np.zeros_like(sample_data)
+        for channel_idx in range(0, sample_data.shape[0]):
+            X_fft[channel_idx, :] = np.abs(np.fft.fft(sample_data[channel_idx, :]))
 
+        # fft_resample_factor = self.sample_len / self.full_record_len
+        # X_fft_downsampled = decimate(X_fft, fft_resample_factor)
 
-class PidSampleDataset(SampleDataset):
-    def __init__(self, root_folder: str, patient_ids: list[str], **super_kwargs):
-        super().__init__(root_folder, **super_kwargs)
-
-        # Restricts the available data to just data associated with patient ids passed in constructor
-        self.patient_recording_sample_index = list(
-            filter(
-                lambda sample_index: sample_index[0] in patient_ids,
-                self.patient_recording_sample_index,
-            )
+        static_data = torch.tensor(
+            [
+                converter(patient_metadata[f])
+                for f, converter in self.static_features.items()
+            ]
         )
 
-        self.patient_ids = patient_ids
+        # NOTE: copy was necessary to prevent "negative stride error" after decimation
+        # Not sure what the performance implications are
+        return (
+            torch.tensor(X_fft.copy()),
+            torch.nan_to_num(static_data, 0.0),
+            torch.tensor(float(patient_metadata["CPC"])),
+        )
 
 
 def just_give_me_dataloaders(
     data_path="./data",
     batch_size=32,
     test_size=0.1,
-    sample_len=1000,
     test_subsample=1.0,
     ds_cls=SampleDataset,
     **ds_kwargs,
 ):
-    ds = ds_cls(
-        data_path,
-        sample_len=sample_len,
-        **ds_kwargs,
+
+    # Just get a list of patient IDs
+    patient_ds = PatientDataset("./data")
+    train_pids, test_pids = train_test_split(
+        patient_ds.patient_ids, test_size=test_size, random_state=42
     )
-    train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
+    train_ds = ds_cls(train_pids, **ds_kwargs)
+    test_ds = ds_cls(test_pids, **ds_kwargs)
 
     subsample_length = int(len(test_ds) * test_subsample)
 
-    test_ds_subsampled, _ = torch.utils.data.random_split(
-        test_ds,
-        [subsample_length, len(test_ds) - subsample_length],
-        generator=torch.Generator().manual_seed(42),
-    )
+    # TODO: do we actually need this?
+    # test_ds_subsampled, _ = torch.utils.data.random_split(
+    #     test_ds,
+    #     [subsample_length, len(test_ds) - subsample_length],
+    #     generator=torch.Generator().manual_seed(42),
+    # )
 
     training_dl = torch.utils.data.DataLoader(
         train_ds,
@@ -411,7 +411,7 @@ def just_give_me_dataloaders(
     )
 
     testing_dl = torch.utils.data.DataLoader(
-        test_ds_subsampled,
+        test_ds,
         collate_fn=test_ds.tst_collate,
         num_workers=config.cores_available,
         batch_size=batch_size,
@@ -465,7 +465,7 @@ def demo(dl, n_batches=3):
 
 
 if __name__ == "__main__":
-    ds = PatientTrainingDataset(root_folder="./data", sample_len=2000)
+    ds = FftDataset(root_folder="./data", sample_len=2000, normalize=False)
 
     print(f"Initialized dataset with length: {len(ds)}")
 
