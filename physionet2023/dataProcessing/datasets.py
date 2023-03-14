@@ -1,6 +1,7 @@
 import os.path
 import random
 
+import numpy as np
 import pandas as pd
 import torch
 from scipy.signal import decimate
@@ -347,6 +348,21 @@ class SampleDataset(RecordingDataset):
         )
 
 
+class FftDataset(SampleDataset):
+    def __init__(self, root_folder: str, **super_kwargs):
+        super().__init__(root_folder, **super_kwargs)
+
+    def __getitem__(self, index: int):
+        # TODO: we can do more here by compressing the entire sequence down to an appropriate length by downsampling the FFT
+        X, static_data, y = super().__getitem__(index)
+
+        X_fft = np.zeros_like(X)
+        for channel_idx in range(0, X.shape[-1]):
+            X_fft[:, channel_idx] = np.abs(np.fft.fft(X[:, channel_idx]))
+
+        return X_fft, static_data, y
+
+
 class PidSampleDataset(SampleDataset):
     def __init__(self, root_folder: str, patient_ids: list[str], **super_kwargs):
         super().__init__(root_folder, **super_kwargs)
@@ -368,9 +384,10 @@ def just_give_me_dataloaders(
     test_size=0.1,
     sample_len=1000,
     test_subsample=1.0,
+    ds_cls=SampleDataset,
     **ds_kwargs,
 ):
-    ds = SampleDataset(
+    ds = ds_cls(
         data_path,
         sample_len=sample_len,
         **ds_kwargs,
