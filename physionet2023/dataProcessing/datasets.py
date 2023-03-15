@@ -201,8 +201,8 @@ class PatientTrainingDataset(PatientDataset):
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, root_folder: str, shuffle=True, **super_kwargs):
-        super().__init__(root_folder)
+    def __init__(self, pids: list, shuffle=True, **super_kwargs):
+        super().__init__("./data", **super_kwargs)
 
         self.shuffle = shuffle
 
@@ -210,10 +210,13 @@ class RecordingDataset(PatientDataset):
         self.patient_recording_index = list()
 
         for pid in self.patient_ids:
-            recording_metadata = self._load_recording_metadata(pid)
+            if pid in pids:
+                recording_metadata = self._load_recording_metadata(pid)
 
-            for recording_id in recording_metadata["Record"].to_list():
-                self.patient_recording_index.append((pid, recording_id))
+                for recording_id in recording_metadata["Record"].to_list():
+                    self.patient_recording_index.append((pid, recording_id))
+
+        self.patient_ids = pids
 
         if self.shuffle:
             random.shuffle(self.patient_recording_index)
@@ -265,6 +268,29 @@ class RecordingDataset(PatientDataset):
         )
 
 
+class FftDownsamplingDataset(RecordingDataset):
+    def __init__(self, pids: list, sample_len=1000, **super_kwargs):
+        super().__init__(pids, **super_kwargs)
+
+        self.sample_len = sample_len
+
+    def __getitem__(self, index: int):
+        X, static_data, y = super().__getitem__(index)
+
+        X_fft = np.zeros_like(X)
+        for channel_idx in range(0, X.shape[0]):
+            X_fft[channel_idx, :] = np.abs(np.fft.fft(X[channel_idx, :]))
+
+        fft_resample_factor = int(self.full_record_len / self.sample_len)
+        # TODO: this is sad and wrong
+        # There are better ways to downsample FFT
+        X_fft_downsampled = decimate(X_fft, fft_resample_factor)
+
+        assert X_fft_downsampled.shape[-1] == self.sample_len
+
+        return X_fft_downsampled, static_data, y
+
+
 class SampleDataset(RecordingDataset):
     def __init__(
         self,
@@ -274,19 +300,16 @@ class SampleDataset(RecordingDataset):
         normalize=True,
         **super_kwargs,
     ):
-        super().__init__("./data", **super_kwargs)
+        super().__init__(pids, **super_kwargs)
 
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()
 
         for patient_id, recording_id in self.patient_recording_index:
-            if patient_id in pids:
-                for sample_idx in range(
-                    0, self.full_record_len - sample_len, sample_len
-                ):
-                    self.patient_recording_sample_index.append(
-                        (patient_id, recording_id, sample_idx)
-                    )
+            for sample_idx in range(0, self.full_record_len - sample_len, sample_len):
+                self.patient_recording_sample_index.append(
+                    (patient_id, recording_id, sample_idx)
+                )
 
         if self.shuffle:
             random.shuffle(self.patient_recording_sample_index)
@@ -465,7 +488,8 @@ def demo(dl, n_batches=3):
 
 
 if __name__ == "__main__":
-    ds = FftDataset(root_folder="./data", sample_len=2000, normalize=False)
+    patient_ds = PatientDataset("./data")
+    ds = FftDownsamplingDataset(pids=patient_ds.patient_ids[0:5], sample_len=2000)
 
     print(f"Initialized dataset with length: {len(ds)}")
 
