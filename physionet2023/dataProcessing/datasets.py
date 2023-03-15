@@ -414,9 +414,16 @@ def just_give_me_dataloaders(
         patient_ds.patient_ids, test_size=test_size, random_state=42
     )
     train_ds = ds_cls(train_pids, **ds_kwargs)
-    test_ds = ds_cls(test_pids, **ds_kwargs)
+    valid_ds = ds_cls(test_pids, **ds_kwargs)
 
-    subsample_length = int(len(test_ds) * test_subsample)
+    # Ensure no data leak
+    training_pid_set = set([x[0] for x in train_ds.patient_recording_sample_index])
+    valid_pid_set = set([x[0] for x in valid_ds.patient_recording_sample_index])
+    assert (
+        len(training_pid_set.intersection(valid_pid_set)) == 0
+    ), f"[-] Found overlap in patient ids between training and validation set"
+
+    subsample_length = int(len(valid_ds) * test_subsample)
 
     # TODO: do we actually need this?
     # test_ds_subsampled, _ = torch.utils.data.random_split(
@@ -434,8 +441,8 @@ def just_give_me_dataloaders(
     )
 
     testing_dl = torch.utils.data.DataLoader(
-        test_ds,
-        collate_fn=test_ds.tst_collate,
+        valid_ds,
+        collate_fn=valid_ds.tst_collate,
         num_workers=config.cores_available,
         batch_size=batch_size,
         pin_memory=True,
@@ -478,28 +485,23 @@ def just_give_me_numpy(
 
 
 def demo(dl, n_batches=3):
-    for batchnum, (X, Y, pm, id) in enumerate(dl):
+    for batchnum, batch_data in enumerate(dl):
+        print("=" * 15)
         print(f"Batch number: {batchnum}")
-        print(f"X shape: {X.shape}")
-        print(f"Y: {Y}")
+        print(batch_data)
 
         if batchnum == n_batches:
             break
 
 
 if __name__ == "__main__":
-    patient_ds = PatientDataset("./data")
-    ds = FftDownsamplingDataset(pids=patient_ds.patient_ids[0:5], sample_len=2000)
-
-    print(f"Initialized dataset with length: {len(ds)}")
-
-    dl = torch.utils.data.DataLoader(
-        ds,
-        num_workers=config.cores_available,
-        batch_size=4,
-        collate_fn=ds.tst_collate,
-        pin_memory=True,
+    training_dl, valid_dl = just_give_me_dataloaders(
+        batch_size=16,
+        sample_len=1000,
+        test_subsample=0.25,
+        include_static=False,
+        ds_cls=FftDataset,
+        normalize=False,
     )
 
-    print("Demoing first few batches...")
-    demo(dl)
+    demo(training_dl)
