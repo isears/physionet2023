@@ -46,7 +46,11 @@ class PatientDataset(torch.utils.data.Dataset):
     full_record_len = 30000
 
     def __init__(
-        self, root_folder: str, quality_cutoff: float = 0.5, include_static: bool = True
+        self,
+        root_folder: str = "./data",
+        patient_ids: list = None,
+        quality_cutoff: float = 0.5,
+        include_static: bool = True,
     ):
         random.seed(0)
         data_folders = list()
@@ -56,6 +60,10 @@ class PatientDataset(torch.utils.data.Dataset):
                 data_folders.append(x)
 
         self.patient_ids = sorted(data_folders)
+
+        if patient_ids is not None:
+            self.patient_ids = [pid for pid in self.patient_ids if pid in patient_ids]
+
         self.root_folder = root_folder
         self.quality_cutoff = quality_cutoff
 
