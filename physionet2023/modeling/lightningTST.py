@@ -10,11 +10,10 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
-from physionet2023.dataProcessing.datasets import just_give_me_dataloaders
+from physionet2023.dataProcessing.datasets import (FftDataset,
+                                                   just_give_me_dataloaders)
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor,
-    compute_challenge_score_regressor,
-)
+    compute_auroc_regressor, compute_challenge_score_regressor)
 
 
 class LitTst(pl.LightningModule):
@@ -147,9 +146,11 @@ if __name__ == "__main__":
 
     training_dl, valid_dl = just_give_me_dataloaders(
         batch_size=tst_config.batch_size,
-        sample_len=3000,
+        sample_len=1000,
         test_subsample=0.25,
         include_static=False,
+        ds_cls=FftDataset,
+        normalize=False,
     )
 
     model = lightning_tst_factory(tst_config, training_dl)
@@ -163,7 +164,7 @@ if __name__ == "__main__":
         accelerator="gpu",
         devices=config.gpus_available,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=5),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=15),
             checkpoint_callback,
         ],
         enable_checkpointing=True,

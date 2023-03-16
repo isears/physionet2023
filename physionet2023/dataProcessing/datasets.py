@@ -1,6 +1,7 @@
 import os.path
 import random
 
+import numpy as np
 import pandas as pd
 import torch
 from scipy.signal import decimate
@@ -200,8 +201,8 @@ class PatientTrainingDataset(PatientDataset):
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, root_folder: str, shuffle=True, **super_kwargs):
-        super().__init__(root_folder)
+    def __init__(self, pids: list, shuffle=True, **super_kwargs):
+        super().__init__("./data", **super_kwargs)
 
         self.shuffle = shuffle
 
@@ -209,10 +210,13 @@ class RecordingDataset(PatientDataset):
         self.patient_recording_index = list()
 
         for pid in self.patient_ids:
-            recording_metadata = self._load_recording_metadata(pid)
+            if pid in pids:
+                recording_metadata = self._load_recording_metadata(pid)
 
-            for recording_id in recording_metadata["Record"].to_list():
-                self.patient_recording_index.append((pid, recording_id))
+                for recording_id in recording_metadata["Record"].to_list():
+                    self.patient_recording_index.append((pid, recording_id))
+
+        self.patient_ids = pids
 
         if self.shuffle:
             random.shuffle(self.patient_recording_index)
@@ -264,16 +268,39 @@ class RecordingDataset(PatientDataset):
         )
 
 
+class FftDownsamplingDataset(RecordingDataset):
+    def __init__(self, pids: list, sample_len=1000, **super_kwargs):
+        super().__init__(pids, **super_kwargs)
+
+        self.sample_len = sample_len
+
+    def __getitem__(self, index: int):
+        X, static_data, y = super().__getitem__(index)
+
+        X_fft = np.zeros_like(X)
+        for channel_idx in range(0, X.shape[0]):
+            X_fft[channel_idx, :] = np.abs(np.fft.fft(X[channel_idx, :]))
+
+        fft_resample_factor = int(self.full_record_len / self.sample_len)
+        # TODO: this is sad and wrong
+        # There are better ways to downsample FFT
+        X_fft_downsampled = decimate(X_fft, fft_resample_factor)
+
+        assert X_fft_downsampled.shape[-1] == self.sample_len
+
+        return X_fft_downsampled, static_data, y
+
+
 class SampleDataset(RecordingDataset):
     def __init__(
         self,
-        root_folder: str,
+        pids: list,
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
         **super_kwargs,
     ):
-        super().__init__(root_folder, **super_kwargs)
+        super().__init__(pids, **super_kwargs)
 
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()
@@ -289,23 +316,6 @@ class SampleDataset(RecordingDataset):
 
         self.resample_factor = resample_factor
         self.normalize = normalize
-
-    def noleak_traintest_split(self, test_size=0.1, seed=0):
-        """
-        Splits datasets based on pantients, not on samples.
-        This ensures samples from a single patient don't appear in both training and validation datasets, which could lead to over-fitting
-        """
-        train_pids, test_pids = train_test_split(
-            self.patient_ids, test_size=test_size, random_state=seed
-        )
-
-        train_ds = PidSampleDataset(self.root_folder, patient_ids=train_pids)
-        test_ds = PidSampleDataset(self.root_folder, patient_ids=test_pids)
-
-        for pid in test_ds.patient_ids:
-            assert pid not in train_ds.patient_ids
-
-        return train_ds, test_ds
 
     def __len__(self):
         return len(self.patient_recording_sample_index)
@@ -347,43 +357,80 @@ class SampleDataset(RecordingDataset):
         )
 
 
-class PidSampleDataset(SampleDataset):
-    def __init__(self, root_folder: str, patient_ids: list[str], **super_kwargs):
-        super().__init__(root_folder, **super_kwargs)
+class FftDataset(SampleDataset):
+    def __init__(self, pids: list, **super_kwargs):
+        super().__init__(pids, **super_kwargs)
 
-        # Restricts the available data to just data associated with patient ids passed in constructor
-        self.patient_recording_sample_index = list(
-            filter(
-                lambda sample_index: sample_index[0] in patient_ids,
-                self.patient_recording_sample_index,
-            )
+        if self.resample_factor:
+            raise NotImplementedError("FFT automatically downsamples to sample_len")
+
+    def __getitem__(self, index: int):
+        # TODO: we can do more here by compressing the entire sequence down to an appropriate length by downsampling the FFT
+        patient_id, recording_id, sample_idx = self.patient_recording_sample_index[
+            index
+        ]
+        patient_metadata = self._load_patient_metadata(patient_id)
+        recording_data = self._load_single_recording(patient_id, recording_id)
+
+        if self.normalize:
+            raise NotImplementedError("Normalize not implemented for fft (yet)")
+
+        sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
+        X_fft = np.zeros_like(sample_data)
+        for channel_idx in range(0, sample_data.shape[0]):
+            X_fft[channel_idx, :] = np.abs(np.fft.fft(sample_data[channel_idx, :]))
+
+        # fft_resample_factor = self.sample_len / self.full_record_len
+        # X_fft_downsampled = decimate(X_fft, fft_resample_factor)
+
+        static_data = torch.tensor(
+            [
+                converter(patient_metadata[f])
+                for f, converter in self.static_features.items()
+            ]
         )
 
-        self.patient_ids = patient_ids
+        # NOTE: copy was necessary to prevent "negative stride error" after decimation
+        # Not sure what the performance implications are
+        return (
+            torch.tensor(X_fft.copy()),
+            torch.nan_to_num(static_data, 0.0),
+            torch.tensor(float(patient_metadata["CPC"])),
+        )
 
 
 def just_give_me_dataloaders(
     data_path="./data",
     batch_size=32,
     test_size=0.1,
-    sample_len=1000,
     test_subsample=1.0,
+    ds_cls=SampleDataset,
     **ds_kwargs,
 ):
-    ds = SampleDataset(
-        data_path,
-        sample_len=sample_len,
-        **ds_kwargs,
-    )
-    train_ds, test_ds = ds.noleak_traintest_split(test_size=test_size)
 
-    subsample_length = int(len(test_ds) * test_subsample)
-
-    test_ds_subsampled, _ = torch.utils.data.random_split(
-        test_ds,
-        [subsample_length, len(test_ds) - subsample_length],
-        generator=torch.Generator().manual_seed(42),
+    # Just get a list of patient IDs
+    patient_ds = PatientDataset("./data")
+    train_pids, test_pids = train_test_split(
+        patient_ds.patient_ids, test_size=test_size, random_state=42
     )
+    train_ds = ds_cls(train_pids, **ds_kwargs)
+    valid_ds = ds_cls(test_pids, **ds_kwargs)
+
+    # Ensure no data leak
+    training_pid_set = set([x[0] for x in train_ds.patient_recording_sample_index])
+    valid_pid_set = set([x[0] for x in valid_ds.patient_recording_sample_index])
+    assert (
+        len(training_pid_set.intersection(valid_pid_set)) == 0
+    ), f"[-] Found overlap in patient ids between training and validation set"
+
+    subsample_length = int(len(valid_ds) * test_subsample)
+
+    # TODO: do we actually need this?
+    # test_ds_subsampled, _ = torch.utils.data.random_split(
+    #     test_ds,
+    #     [subsample_length, len(test_ds) - subsample_length],
+    #     generator=torch.Generator().manual_seed(42),
+    # )
 
     training_dl = torch.utils.data.DataLoader(
         train_ds,
@@ -394,8 +441,8 @@ def just_give_me_dataloaders(
     )
 
     testing_dl = torch.utils.data.DataLoader(
-        test_ds_subsampled,
-        collate_fn=test_ds.tst_collate,
+        valid_ds,
+        collate_fn=valid_ds.tst_collate,
         num_workers=config.cores_available,
         batch_size=batch_size,
         pin_memory=True,
@@ -438,27 +485,23 @@ def just_give_me_numpy(
 
 
 def demo(dl, n_batches=3):
-    for batchnum, (X, Y, pm, id) in enumerate(dl):
+    for batchnum, batch_data in enumerate(dl):
+        print("=" * 15)
         print(f"Batch number: {batchnum}")
-        print(f"X shape: {X.shape}")
-        print(f"Y: {Y}")
+        print(batch_data)
 
         if batchnum == n_batches:
             break
 
 
 if __name__ == "__main__":
-    ds = PatientTrainingDataset(root_folder="./data", sample_len=2000)
-
-    print(f"Initialized dataset with length: {len(ds)}")
-
-    dl = torch.utils.data.DataLoader(
-        ds,
-        num_workers=config.cores_available,
-        batch_size=4,
-        collate_fn=ds.tst_collate,
-        pin_memory=True,
+    training_dl, valid_dl = just_give_me_dataloaders(
+        batch_size=16,
+        sample_len=1000,
+        test_subsample=0.25,
+        include_static=False,
+        ds_cls=FftDataset,
+        normalize=False,
     )
 
-    print("Demoing first few batches...")
-    demo(dl)
+    demo(training_dl)
