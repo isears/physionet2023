@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -n 1
-#SBATCH -p debug
-#####SBATCH --gres=gpu:1
+#SBATCH -p gpu-debug
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=00:30:00

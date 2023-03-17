@@ -10,10 +10,16 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
-from physionet2023.dataProcessing.datasets import (FftDataset,
-                                                   just_give_me_dataloaders)
+from physionet2023.dataProcessing.datasets import (
+    FftDataset,
+    PatientDataset,
+    just_give_me_dataloaders,
+)
+from physionet2023.dataProcessing.patientDatasets import AvgFFTDataset
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor, compute_challenge_score_regressor)
+    compute_auroc_regressor,
+    compute_challenge_score_regressor,
+)
 
 
 class LitTst(pl.LightningModule):
@@ -67,6 +73,7 @@ class LitTst(pl.LightningModule):
         self.log(
             "val_loss",
             val_loss,
+            batch_size=self.tst_config.batch_size,
             # on_step=False,
             # on_epoch=True,
             # prog_bar=True,
@@ -83,7 +90,9 @@ class LitTst(pl.LightningModule):
         comp = self.competition_metric(
             outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
         )
-        self.log("Validation Competition Score", comp)
+        self.log(
+            "Validation Competition Score", comp, batch_size=self.tst_config.batch_size
+        )
 
     def test_step(self, batch, batch_idx):
         X, y, pm, IDx = batch
@@ -120,6 +129,33 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
     return lightning_wrapper
 
 
+def dataloader_factory(tst_config: TSTConfig):
+    pids = PatientDataset().patient_ids
+
+    train_pids, valid_pids = train_test_split(pids)
+
+    train_ds = AvgFFTDataset(patient_ids=train_pids, sample_len=1000)
+    valid_ds = AvgFFTDataset(patient_ids=valid_pids, sample_len=1000)
+
+    train_dl = torch.utils.data.DataLoader(
+        train_ds,
+        collate_fn=train_ds.tst_collate,
+        num_workers=config.cores_available,
+        batch_size=tst_config.batch_size,
+        pin_memory=True,
+    )
+
+    valid_dl = torch.utils.data.DataLoader(
+        valid_ds,
+        collate_fn=valid_ds.tst_collate,
+        num_workers=config.cores_available,
+        batch_size=tst_config.batch_size,
+        pin_memory=True,
+    )
+
+    return train_dl, valid_dl
+
+
 if __name__ == "__main__":
     problem_params = {
         "lr": 1e-4,
@@ -132,7 +168,7 @@ if __name__ == "__main__":
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 16,
+        "batch_size": 64,
     }
 
     tst_config = TSTConfig(save_path="lightningTst", **problem_params)
@@ -140,18 +176,11 @@ if __name__ == "__main__":
     wandb_logger = WandbLogger(
         project="physionet2023wandb",
         config=tst_config,
-        group="TST",
+        group="PatientTST",
         job_type="train",
     )
 
-    training_dl, valid_dl = just_give_me_dataloaders(
-        batch_size=tst_config.batch_size,
-        sample_len=1000,
-        test_subsample=0.25,
-        include_static=False,
-        ds_cls=FftDataset,
-        normalize=False,
-    )
+    training_dl, valid_dl = dataloader_factory(tst_config)
 
     model = lightning_tst_factory(tst_config, training_dl)
 
@@ -164,11 +193,13 @@ if __name__ == "__main__":
         accelerator="gpu",
         devices=config.gpus_available,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=15),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=5),
             checkpoint_callback,
         ],
         enable_checkpointing=True,
-        val_check_interval=0.005,
+        # For when doing sample-based datasets
+        # val_check_interval=0.005,
+        log_every_n_steps=7,
         logger=wandb_logger,
     )
 

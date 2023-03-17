@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 from physionet2023.dataProcessing.datasets import PatientDataset
 
@@ -10,10 +11,21 @@ class AvgFFTDataset(PatientDataset):
         sample_len=1000,
         patient_ids: list = None,
         quality_cutoff: float = 0.5,
-        include_static: bool = True,
     ):
-        super().__init__(root_folder, patient_ids, quality_cutoff, include_static)
+        super().__init__(root_folder, patient_ids, quality_cutoff, include_static=False)
         self.sample_len = sample_len
+
+    @staticmethod
+    def tst_collate(batch):
+        """
+        TST also needs pad_mask, even though all sequences are the same length
+        """
+        X = torch.stack([recording_data for recording_data, _ in batch], dim=0)
+        y = torch.stack([label for _, label in batch], dim=0)
+
+        pad_mask = torch.ones_like(X[:, 0, :]).bool()
+
+        return X.permute(0, 2, 1), y, pad_mask, "DummyID"
 
     def __getitem__(self, index: int):
         patient_metadata, recording_metadata, recordings = super().__getitem__(index)
@@ -38,7 +50,9 @@ class AvgFFTDataset(PatientDataset):
 
         aggregated_fft = aggregated_fft / sample_count
 
-        return aggregated_fft, patient_metadata["CPC"]
+        return torch.tensor(aggregated_fft, dtype=torch.float32), torch.tensor(
+            float(patient_metadata["CPC"]), dtype=torch.float32
+        )
 
 
 if __name__ == "__main__":
