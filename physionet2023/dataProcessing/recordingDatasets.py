@@ -29,6 +29,9 @@ class SpectrogramDataset(RecordingDataset):
         # channels-last
         X = np.stack(spectrograms, axis=-1)
 
+        # deal with -inf
+        X[X == -np.inf] = X[X != -np.inf].min()
+
         return torch.tensor(X), label
 
 
