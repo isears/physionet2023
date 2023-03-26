@@ -6,10 +6,16 @@ from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDatas
 
 
 class SpectrogramDataset(RecordingDataset):
-    def __init__(self, pids: list, shuffle=True, f_min=0.5, f_max=30, **super_kwargs):
-        super().__init__(pids, shuffle, **super_kwargs)
+    def __init__(
+        self, patient_ids: list, shuffle=True, f_min=0.5, f_max=30, **super_kwargs
+    ):
+        super().__init__(patient_ids, shuffle, include_static=False, **super_kwargs)
         self.f_min = f_min
         self.f_max = f_max
+
+        sample_X, _ = self.__getitem__(0)
+        self.dims = (sample_X.shape[1], sample_X.shape[2])
+        self.sample_len = self.dims[1]  # Mostly for backwards compatibility
 
     def __getitem__(self, index: int):
         recording_data, static_data, label = super().__getitem__(index)
@@ -26,8 +32,8 @@ class SpectrogramDataset(RecordingDataset):
             s = np.log10(s)
             spectrograms.append(s)
 
-        # channels-last
-        X = np.stack(spectrograms, axis=-1)
+        # channels-first
+        X = np.stack(spectrograms, axis=0)
 
         # deal with -inf
         X[X == -np.inf] = X[X != -np.inf].min()
