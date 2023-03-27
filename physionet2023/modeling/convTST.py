@@ -2,8 +2,7 @@ import pytorch_lightning as pl
 import torch
 from mvtst.models import TSTConfig
 from mvtst.models.loss import NoFussCrossEntropyLoss
-from mvtst.models.ts_transformer import (ConvTST,
-                                         TSTransformerEncoderClassiregressor)
+from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregressor
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -12,16 +11,19 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling.scoringUtil import (ClassifierAUROC,
-                                                ClassifierCompetitionScore,
-                                                CompetitionScore,
-                                                RegressorAUROC)
+from physionet2023.modeling.scoringUtil import (
+    ClassifierAUROC,
+    ClassifierCompetitionScore,
+    CompetitionScore,
+    RegressorAUROC,
+)
 
 
 class plConvTst(pl.LightningModule):
     def __init__(self, tst: ConvTST, tst_config: TSTConfig) -> None:
         super().__init__()
-        self.save_hyperparameters(ignore=["tst"])
+        # TODO: damned if you do damned if you don't
+        # self.save_hyperparameters(ignore=["tst"])
         self.tst = tst
 
         self.tst_config = tst_config
@@ -61,26 +63,36 @@ class plConvTst(pl.LightningModule):
         self.auroc_scorer.reset()
         self.competition_scorer.reset()
 
-        print(f"\nValidation loss: {val_loss:.4}, auroc: {val_auroc:.4}")
+        print(
+            f"\nValidation loss: {val_loss:.4}, auroc: {val_auroc:.4}, competition: {val_competition_score}"
+        )
 
-    # def test_step(self, batch, batch_idx):
-    #     X, y = batch
-    #     preds = torch.squeeze(self.tst(X))
-    #     test_loss = torch.nn.functional.mse_loss(preds, y)
-    #     self.log("test_loss", test_loss)
+    def test_step(self, batch, batch_idx):
+        X, y = batch
+        preds = torch.squeeze(self.tst(X))
 
-    #     return {"loss": test_loss, "preds": preds, "target": y}
+        loss = self.loss_fn(preds, y)
+        self.auroc_scorer.update(preds, y)
+        self.competition_scorer.update(preds, y)
 
-    # def test_step_end(self, outputs):
-    #     auc = self.auroc_metric(
-    #         outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-    #     )
-    #     self.log("Test AUC", auc)
+        return loss
 
-    #     comp = self.competition_metric(
-    #         outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-    #     )
-    #     self.log("Test Competiton Score", comp)
+    def test_epoch_end(self, test_step_outputs):
+        test_loss = torch.tensor(test_step_outputs).mean()
+        test_auroc = self.auroc_scorer.compute()
+        test_competition_score = self.competition_scorer.compute()
+
+        self.log("Test AUC", test_auroc)
+        self.log("Test Competition Score", test_competition_score)
+        self.log("test_loss", test_loss)
+
+        self.auroc_scorer.reset()
+        self.competition_scorer.reset()
+
+        print(
+            f"\Test loss: {test_loss:.4}, auroc: {test_auroc:.4}, competition: {test_competition_score}"
+        )
+        return test_competition_score
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -89,8 +101,8 @@ class plConvTst(pl.LightningModule):
 def lightning_tst_factory(tst_config: TSTConfig, ds):
     tst = ConvTST(
         **tst_config.generate_model_params(),
-        spectrogram_dims=ds.dataset.dims,
-        feat_dim=ds.dataset.features_dim,
+        spectrogram_dims=ds.dims,
+        feat_dim=ds.features_dim,
     )
 
     lightning_wrapper = plConvTst(tst, tst_config)
@@ -98,10 +110,13 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
     return lightning_wrapper
 
 
-def dataloader_factory(tst_config: TSTConfig):
+def dataloader_factory(tst_config: TSTConfig, deterministic_split=False):
     pids = PatientDataset().patient_ids
 
-    train_pids, valid_pids = train_test_split(pids)
+    if deterministic_split:
+        train_pids, valid_pids = train_test_split(pids, random_state=42)
+    else:
+        train_pids, valid_pids = train_test_split(pids)
 
     train_ds = SpectrogramDataset(patient_ids=train_pids, for_classification=True)
     valid_ds = SpectrogramDataset(patient_ids=valid_pids, for_classification=True)
@@ -149,7 +164,7 @@ if __name__ == "__main__":
 
     training_dl, valid_dl = dataloader_factory(tst_config)
 
-    model = lightning_tst_factory(tst_config, training_dl)
+    model = lightning_tst_factory(tst_config, training_dl.dataset)
 
     checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
 
