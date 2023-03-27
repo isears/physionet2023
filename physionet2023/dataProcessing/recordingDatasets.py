@@ -2,16 +2,24 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
-from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDataset
+from physionet2023.dataProcessing.datasets import (PatientDataset,
+                                                   RecordingDataset)
 
 
 class SpectrogramDataset(RecordingDataset):
     def __init__(
-        self, patient_ids: list, shuffle=True, f_min=0.5, f_max=30, **super_kwargs
+        self,
+        patient_ids: list,
+        shuffle=True,
+        for_classification=False,
+        f_min=0.5,
+        f_max=30,
+        **super_kwargs,
     ):
         super().__init__(patient_ids, shuffle, include_static=False, **super_kwargs)
         self.f_min = f_min
         self.f_max = f_max
+        self.for_classification = for_classification
 
         sample_X, _ = self.__getitem__(0)
         self.dims = (sample_X.shape[1], sample_X.shape[2])
@@ -38,7 +46,12 @@ class SpectrogramDataset(RecordingDataset):
         # deal with -inf
         X[X == -np.inf] = X[X != -np.inf].min()
 
-        return torch.tensor(X), label
+        if self.for_classification:
+            classification_label = torch.zeros(5)
+            classification_label[label.int() - 1] = 1.
+            return torch.tensor(X), classification_label
+        else:
+            return torch.tensor(X), label
 
 
 if __name__ == "__main__":

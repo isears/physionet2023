@@ -97,6 +97,21 @@ class RegressorAUROC(BinaryAUROC):
         return super().update(binary_outputs, binary_labels)
 
 
+class ClassifierAUROC(BinaryAUROC):
+    def __init__(self):
+        super().__init__()
+
+    def update(self, preds, target):
+        # Predicting probability of "poor" outcome (CPC 3, 4, or 5)
+        s = torch.nn.functional.softmax(preds, dim=1)
+        poor_outcome_probabilities = s[:, 2] + s[:, 3] + s[:, 4]
+        poor_outcome_label = (
+            (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
+        ).float()
+
+        return super().update(poor_outcome_probabilities, poor_outcome_label)
+
+
 class CompetitionScore(Metric):
     is_differentiable = False
     higher_is_better = True
@@ -116,7 +131,7 @@ class CompetitionScore(Metric):
         preds_np = torch.cat(self.all_preds).cpu().numpy()
         labels_np = torch.cat(self.all_labels).cpu().numpy()
 
-        return compute_challenge_score_regressor(labels_np, preds_np)
+        return compute_challenge_score(labels_np, preds_np)
 
     def reset(self):
         del self.all_preds
@@ -126,3 +141,14 @@ class CompetitionScore(Metric):
         self.all_labels = list()
 
         return super().reset()
+
+
+class ClassifierCompetitionScore(CompetitionScore):
+    def update(self, preds, target):
+        s = torch.nn.functional.softmax(preds, dim=1)
+        poor_outcome_probabilities = s[:, 2] + s[:, 3] + s[:, 4]
+        poor_outcome_label = (
+            (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
+        ).float()
+
+        return super().update(poor_outcome_probabilities, poor_outcome_label)

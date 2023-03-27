@@ -2,7 +2,8 @@ import pytorch_lightning as pl
 import torch
 from mvtst.models import TSTConfig
 from mvtst.models.loss import NoFussCrossEntropyLoss
-from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregressor
+from mvtst.models.ts_transformer import (ConvTST,
+                                         TSTransformerEncoderClassiregressor)
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
@@ -11,7 +12,10 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling.scoringUtil import CompetitionScore, RegressorAUROC
+from physionet2023.modeling.scoringUtil import (ClassifierAUROC,
+                                                ClassifierCompetitionScore,
+                                                CompetitionScore,
+                                                RegressorAUROC)
 
 
 class plConvTst(pl.LightningModule):
@@ -21,18 +25,16 @@ class plConvTst(pl.LightningModule):
         self.tst = tst
 
         self.tst_config = tst_config
-        # self.loss_fn = NoFussCrossEntropyLoss()
+        self.loss_fn = torch.nn.CrossEntropyLoss()
 
-        self.auroc_scorer = RegressorAUROC()
-        self.competition_scorer = CompetitionScore()
+        self.auroc_scorer = ClassifierAUROC()
+        self.competition_scorer = ClassifierCompetitionScore()
 
     def training_step(self, batch, batch_idx):
         X, y = batch
         preds = torch.squeeze(self.tst(X))
 
-        # loss = self.loss_fn(preds, y)
-
-        loss = torch.nn.functional.mse_loss(preds, y)
+        loss = self.loss_fn(preds, y)
 
         self.log("train_loss", loss, batch_size=self.tst_config.batch_size)
         return loss
@@ -41,7 +43,7 @@ class plConvTst(pl.LightningModule):
         X, y = batch
         preds = torch.squeeze(self.tst(X))
 
-        loss = torch.nn.functional.mse_loss(preds, y)
+        loss = self.loss_fn(preds, y)
         self.auroc_scorer.update(preds, y)
         self.competition_scorer.update(preds, y)
 
@@ -101,8 +103,8 @@ def dataloader_factory(tst_config: TSTConfig):
 
     train_pids, valid_pids = train_test_split(pids)
 
-    train_ds = SpectrogramDataset(patient_ids=train_pids)
-    valid_ds = SpectrogramDataset(patient_ids=valid_pids)
+    train_ds = SpectrogramDataset(patient_ids=train_pids, for_classification=True)
+    valid_ds = SpectrogramDataset(patient_ids=valid_pids, for_classification=True)
 
     train_dl = torch.utils.data.DataLoader(
         train_ds,
@@ -136,12 +138,12 @@ if __name__ == "__main__":
         "batch_size": 16,
     }
 
-    tst_config = TSTConfig(save_path="ConvTst", **problem_params)
+    tst_config = TSTConfig(save_path="ConvTst", num_classes=5, **problem_params)
 
     wandb_logger = WandbLogger(
         project="physionet2023wandb",
         config=tst_config,
-        group="ConvTST",
+        group="ConvTST_classifier",
         job_type="train",
     )
 
