@@ -70,7 +70,7 @@ def objective(trial: optuna.Trial) -> float:
         val_check_interval=0.1,
         enable_checkpointing=True,
         accumulate_grad_batches=accumulation_coeff,
-        progress_bar_refresh_rate=0,
+        enable_progress_bar=False,
     )
 
     try:

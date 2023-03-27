@@ -2,8 +2,7 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
-from physionet2023.dataProcessing.datasets import (PatientDataset,
-                                                   RecordingDataset)
+from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDataset
 
 
 class SpectrogramDataset(RecordingDataset):
@@ -36,8 +35,9 @@ class SpectrogramDataset(RecordingDataset):
             s = s[freq_filter]
             f = f[freq_filter]
 
-            # TODO: research alternative approaches
-            s = np.log10(s)
+            with np.errstate(divide="ignore"):
+                s = np.log10(s)  # TODO: research alternative approaches
+
             spectrograms.append(s)
 
         # channels-first
@@ -48,7 +48,7 @@ class SpectrogramDataset(RecordingDataset):
 
         if self.for_classification:
             classification_label = torch.zeros(5)
-            classification_label[label.int() - 1] = 1.
+            classification_label[label.int() - 1] = 1.0
             return torch.tensor(X), classification_label
         else:
             return torch.tensor(X), label
