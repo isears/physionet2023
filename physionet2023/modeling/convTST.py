@@ -11,10 +11,7 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor,
-    compute_challenge_score_regressor,
-)
+from physionet2023.modeling.scoringUtil import CompetitionScore, RegressorAUROC
 
 
 class plConvTst(pl.LightningModule):
@@ -26,8 +23,8 @@ class plConvTst(pl.LightningModule):
         self.tst_config = tst_config
         # self.loss_fn = NoFussCrossEntropyLoss()
 
-        self.auroc_metric = compute_auroc_regressor
-        self.competition_metric = compute_challenge_score_regressor
+        self.auroc_scorer = RegressorAUROC()
+        self.competition_scorer = CompetitionScore()
 
     def training_step(self, batch, batch_idx):
         X, y = batch
@@ -44,49 +41,44 @@ class plConvTst(pl.LightningModule):
         X, y = batch
         preds = torch.squeeze(self.tst(X))
 
-        val_loss = torch.nn.functional.mse_loss(preds, y)
-        self.log(
-            "val_loss",
-            val_loss,
-            batch_size=self.tst_config.batch_size,
-            # on_step=False,
-            # on_epoch=True,
-            # prog_bar=True,
-            # sync_dist=True,
-        )
-        return {"loss": val_loss, "preds": preds, "target": y}
+        loss = torch.nn.functional.mse_loss(preds, y)
+        self.auroc_scorer.update(preds, y)
+        self.competition_scorer.update(preds, y)
 
-    def validation_step_end(self, outputs):
-        auc = self.auroc_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Validation AUC", auc)
+        return loss
 
-        comp = self.competition_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log(
-            "Validation Competition Score", comp, batch_size=self.tst_config.batch_size
-        )
+    def validation_epoch_end(self, validation_step_outputs):
+        val_loss = torch.tensor(validation_step_outputs).mean()
+        val_auroc = self.auroc_scorer.compute()
+        val_competition_score = self.competition_scorer.compute()
 
-    def test_step(self, batch, batch_idx):
-        X, y = batch
-        preds = torch.squeeze(self.tst(X))
-        test_loss = torch.nn.functional.mse_loss(preds, y)
-        self.log("test_loss", test_loss)
+        self.log("Validation AUC", val_auroc)
+        self.log("Validation Competition Score", val_competition_score)
+        self.log("val_loss", val_loss)
 
-        return {"loss": test_loss, "preds": preds, "target": y}
+        self.auroc_scorer.reset()
+        self.competition_scorer.reset()
 
-    def test_step_end(self, outputs):
-        auc = self.auroc_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Test AUC", auc)
+        print(f"\nValidation loss: {val_loss:.4}, auroc: {val_auroc:.4}")
 
-        comp = self.competition_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Test Competiton Score", comp)
+    # def test_step(self, batch, batch_idx):
+    #     X, y = batch
+    #     preds = torch.squeeze(self.tst(X))
+    #     test_loss = torch.nn.functional.mse_loss(preds, y)
+    #     self.log("test_loss", test_loss)
+
+    #     return {"loss": test_loss, "preds": preds, "target": y}
+
+    # def test_step_end(self, outputs):
+    #     auc = self.auroc_metric(
+    #         outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
+    #     )
+    #     self.log("Test AUC", auc)
+
+    #     comp = self.competition_metric(
+    #         outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
+    #     )
+    #     self.log("Test Competiton Score", comp)
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -141,7 +133,7 @@ if __name__ == "__main__":
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 8,
+        "batch_size": 16,
     }
 
     tst_config = TSTConfig(save_path="ConvTst", **problem_params)
@@ -171,8 +163,8 @@ if __name__ == "__main__":
         ],
         enable_checkpointing=True,
         # For when doing sample-based datasets
-        # val_check_interval=0.005,
-        log_every_n_steps=7,
+        val_check_interval=0.1,
+        # log_every_n_steps=7,
         logger=wandb_logger,
     )
 
