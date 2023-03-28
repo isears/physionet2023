@@ -14,8 +14,10 @@ import sys
 
 import joblib
 import numpy as np
+import torch
 
 from helper_code import *
+from physionet2023.modeling.convTST import train_fn
 
 ################################################################################
 #
@@ -26,7 +28,8 @@ from helper_code import *
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
-    raise NotImplemented
+    state_dict = train_fn(data_folder, log=False)
+    torch.save(state_dict, f"{model_folder}/state_dict")
 
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the

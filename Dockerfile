@@ -1,8 +1,9 @@
-FROM pytorch_lightning:base-cuda-py3.9-torch1.13-cuda11.7.1
+# FROM pytorchlightning/pytorch_lightning:base-cuda-py3.10-torch2.0-cuda11.7.1
+FROM python:3.10.1-buster 
 
 ## Install your dependencies here using apt install, etc.
 RUN git clone https://github.com/isears/mvts_transformer
-RUN pip install mvts_transformer/
+RUN pip install --editable ./mvts_transformer/
 
 ## DO NOT EDIT these 3 lines.
 RUN mkdir /challenge

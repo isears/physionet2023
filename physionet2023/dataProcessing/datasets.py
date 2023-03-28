@@ -210,7 +210,7 @@ class PatientTrainingDataset(PatientDataset):
 
 class RecordingDataset(PatientDataset):
     def __init__(self, pids: list, shuffle=True, **super_kwargs):
-        super().__init__("./data", **super_kwargs)
+        super().__init__(**super_kwargs)
 
         self.shuffle = shuffle
 
@@ -415,7 +415,6 @@ def just_give_me_dataloaders(
     ds_cls=SampleDataset,
     **ds_kwargs,
 ):
-
     # Just get a list of patient IDs
     patient_ds = PatientDataset("./data")
     train_pids, test_pids = train_test_split(

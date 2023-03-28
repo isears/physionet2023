@@ -15,7 +15,12 @@ class SpectrogramDataset(RecordingDataset):
         f_max=30,
         **super_kwargs,
     ):
-        super().__init__(patient_ids, shuffle, include_static=False, **super_kwargs)
+        super().__init__(
+            patient_ids,
+            shuffle,
+            include_static=False,
+            **super_kwargs,
+        )
         self.f_min = f_min
         self.f_max = f_max
         self.for_classification = for_classification

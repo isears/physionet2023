@@ -49,22 +49,23 @@ class plConvTst(pl.LightningModule):
         self.auroc_scorer.update(preds, y)
         self.competition_scorer.update(preds, y)
 
+        self.log("val_loss", loss, on_step=False, on_epoch=True)
+
         return loss
 
-    def validation_epoch_end(self, validation_step_outputs):
-        val_loss = torch.tensor(validation_step_outputs).mean()
+    def on_validation_epoch_end(self):
+        # val_loss = torch.tensor(validation_step_outputs).mean()
         val_auroc = self.auroc_scorer.compute()
         val_competition_score = self.competition_scorer.compute()
 
         self.log("Validation AUC", val_auroc)
         self.log("Validation Competition Score", val_competition_score)
-        self.log("val_loss", val_loss)
 
         self.auroc_scorer.reset()
         self.competition_scorer.reset()
 
         print(
-            f"\nValidation loss: {val_loss:.4}, auroc: {val_auroc:.4}, competition: {val_competition_score}"
+            f"\nValidation auroc: {val_auroc:.4}, competition: {val_competition_score}"
         )
 
     def test_step(self, batch, batch_idx):
@@ -77,7 +78,7 @@ class plConvTst(pl.LightningModule):
 
         return loss
 
-    def test_epoch_end(self, test_step_outputs):
+    def on_test_epoch_end(self, test_step_outputs):
         test_loss = torch.tensor(test_step_outputs).mean()
         test_auroc = self.auroc_scorer.compute()
         test_competition_score = self.competition_scorer.compute()
@@ -110,16 +111,22 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
     return lightning_wrapper
 
 
-def dataloader_factory(tst_config: TSTConfig, deterministic_split=False):
-    pids = PatientDataset().patient_ids
+def dataloader_factory(
+    tst_config: TSTConfig, data_path: str = None, deterministic_split=False
+):
+    pids = PatientDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(pids, random_state=42)
     else:
         train_pids, valid_pids = train_test_split(pids)
 
-    train_ds = SpectrogramDataset(patient_ids=train_pids, for_classification=True)
-    valid_ds = SpectrogramDataset(patient_ids=valid_pids, for_classification=True)
+    train_ds = SpectrogramDataset(
+        root_folder=data_path, patient_ids=train_pids, for_classification=True
+    )
+    valid_ds = SpectrogramDataset(
+        root_folder=data_path, patient_ids=valid_pids, for_classification=True
+    )
 
     train_dl = torch.utils.data.DataLoader(
         train_ds,
@@ -138,7 +145,7 @@ def dataloader_factory(tst_config: TSTConfig, deterministic_split=False):
     return train_dl, valid_dl
 
 
-if __name__ == "__main__":
+def train_fn(data_path: str, log: bool = True):
     problem_params = {
         "lr": 1e-4,
         "dropout": 0.1,
@@ -155,14 +162,17 @@ if __name__ == "__main__":
 
     tst_config = TSTConfig(save_path="ConvTst", num_classes=5, **problem_params)
 
-    wandb_logger = WandbLogger(
-        project="physionet2023wandb",
-        config=tst_config,
-        group="ConvTST_classifier",
-        job_type="train",
-    )
+    if log:
+        logger = WandbLogger(
+            project="physionet2023wandb",
+            config=tst_config,
+            group="ConvTST_classifier",
+            job_type="train",
+        )
+    else:
+        logger = None
 
-    training_dl, valid_dl = dataloader_factory(tst_config)
+    training_dl, valid_dl = dataloader_factory(tst_config, data_path=data_path)
 
     model = lightning_tst_factory(tst_config, training_dl.dataset)
 
@@ -182,7 +192,7 @@ if __name__ == "__main__":
         # For when doing sample-based datasets
         val_check_interval=0.1,
         # log_every_n_steps=7,
-        logger=wandb_logger,
+        logger=logger,
     )
 
     trainer.fit(
@@ -191,8 +201,8 @@ if __name__ == "__main__":
         val_dataloaders=valid_dl,
     )
 
-    # best_model = LitTst.load_from_checkpoint(checkpoint_callback.best_model_path)
-    # results = trainer.test(model=best_model, dataloaders=valid_dl)
+    return torch.load(checkpoint_callback.best_model_path)["state_dict"]
 
-    # print(type(results))
-    # print(results)
+
+if __name__ == "__main__":
+    train_fn(data_path="./data", log=False)
