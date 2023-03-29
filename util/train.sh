@@ -2,6 +2,7 @@
 
 docker run \
 --rm \
+--ipc=host \
 --runtime=nvidia \
 -v ./cache/models:/challenge/model \
 -v ./data:/challenge/test_data \
