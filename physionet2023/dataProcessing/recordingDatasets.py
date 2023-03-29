@@ -51,7 +51,7 @@ class SpectrogramDataset(RecordingDataset):
         # deal with -inf
         X[X == -np.inf] = X[X != -np.inf].min()
 
-        if self.for_classification:
+        if self.for_classification and not self.for_testing:
             classification_label = torch.zeros(5)
             classification_label[label.int() - 1] = 1.0
             return torch.tensor(X), classification_label

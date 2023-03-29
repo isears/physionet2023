@@ -209,10 +209,11 @@ class PatientTrainingDataset(PatientDataset):
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, pids: list, shuffle=True, **super_kwargs):
+    def __init__(self, pids: list, shuffle=True, for_testing=False, **super_kwargs):
         super().__init__(**super_kwargs)
 
         self.shuffle = shuffle
+        self.for_testing = for_testing
 
         # Generate an index of tuples (patient_id, recording_id)
         self.patient_recording_index = list()
@@ -269,10 +270,15 @@ class RecordingDataset(PatientDataset):
             ]
         )
 
+        if not self.for_testing:
+            label = torch.tensor(float(patient_metadata["CPC"]))
+        else:
+            label = torch.tensor(float("nan"))
+
         return (
             torch.tensor(recording_data),
             static_data,
-            torch.tensor(float(patient_metadata["CPC"])),
+            label,
         )
 
 

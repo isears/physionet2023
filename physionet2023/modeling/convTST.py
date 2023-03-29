@@ -68,32 +68,9 @@ class plConvTst(pl.LightningModule):
             f"\nValidation auroc: {val_auroc:.4}, competition: {val_competition_score}"
         )
 
-    def test_step(self, batch, batch_idx):
-        X, y = batch
-        preds = torch.squeeze(self.tst(X))
-
-        loss = self.loss_fn(preds, y)
-        self.auroc_scorer.update(preds, y)
-        self.competition_scorer.update(preds, y)
-
-        return loss
-
-    def on_test_epoch_end(self, test_step_outputs):
-        test_loss = torch.tensor(test_step_outputs).mean()
-        test_auroc = self.auroc_scorer.compute()
-        test_competition_score = self.competition_scorer.compute()
-
-        self.log("Test AUC", test_auroc)
-        self.log("Test Competition Score", test_competition_score)
-        self.log("test_loss", test_loss)
-
-        self.auroc_scorer.reset()
-        self.competition_scorer.reset()
-
-        print(
-            f"\Test loss: {test_loss:.4}, auroc: {test_auroc:.4}, competition: {test_competition_score}"
-        )
-        return test_competition_score
+    def forward(self, X):
+        preds = self.tst(X)
+        return torch.nn.functional.softmax(preds, dim=1)
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -111,41 +88,8 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
     return lightning_wrapper
 
 
-def dataloader_factory(
-    tst_config: TSTConfig, data_path: str = None, deterministic_split=False
-):
-    pids = PatientDataset(root_folder=data_path).patient_ids
-
-    if deterministic_split:
-        train_pids, valid_pids = train_test_split(pids, random_state=42)
-    else:
-        train_pids, valid_pids = train_test_split(pids)
-
-    train_ds = SpectrogramDataset(
-        root_folder=data_path, patient_ids=train_pids, for_classification=True
-    )
-    valid_ds = SpectrogramDataset(
-        root_folder=data_path, patient_ids=valid_pids, for_classification=True
-    )
-
-    train_dl = torch.utils.data.DataLoader(
-        train_ds,
-        num_workers=config.cores_available,
-        batch_size=tst_config.batch_size,
-        pin_memory=True,
-    )
-
-    valid_dl = torch.utils.data.DataLoader(
-        valid_ds,
-        num_workers=config.cores_available,
-        batch_size=tst_config.batch_size,
-        pin_memory=True,
-    )
-
-    return train_dl, valid_dl
-
-
-def train_fn(data_path: str, log: bool = True):
+# Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
+def config_factory():
     problem_params = {
         "lr": 1e-4,
         "dropout": 0.1,
@@ -161,6 +105,45 @@ def train_fn(data_path: str, log: bool = True):
     }
 
     tst_config = TSTConfig(save_path="ConvTst", num_classes=5, **problem_params)
+
+    return tst_config
+
+
+def single_dl_factory(
+    tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
+):
+    ds = SpectrogramDataset(
+        root_folder=data_path, patient_ids=pids, for_classification=True, **ds_args
+    )
+
+    dl = torch.utils.data.DataLoader(
+        ds,
+        num_workers=config.cores_available,
+        batch_size=tst_config.batch_size,
+        pin_memory=True,
+    )
+
+    return dl
+
+
+def dataloader_factory(
+    tst_config: TSTConfig, data_path: str = None, deterministic_split=False
+):
+    pids = PatientDataset(root_folder=data_path).patient_ids
+
+    if deterministic_split:
+        train_pids, valid_pids = train_test_split(pids, random_state=42)
+    else:
+        train_pids, valid_pids = train_test_split(pids)
+
+    train_dl = single_dl_factory(tst_config, train_pids, data_path)
+    valid_dl = single_dl_factory(tst_config, valid_pids, data_path)
+
+    return train_dl, valid_dl
+
+
+def train_fn(data_path: str, log: bool = True):
+    tst_config = config_factory()
 
     if log:
         logger = WandbLogger(
