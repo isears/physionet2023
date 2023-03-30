@@ -30,7 +30,8 @@ class plConvTst(pl.LightningModule):
         self.tst = tst
 
         self.tst_config = tst_config
-        self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.1]))
+        # self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.1]))
+        self.loss_fn = torch.nn.BCEWithLogitsLoss()
 
         if config.gpus_available > 0:
             device = "cuda"  # TODO: this will break if using ROCm (AMD)
