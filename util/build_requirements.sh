@@ -2,10 +2,6 @@
 
 pip freeze \
 --exclude black \
---exclude torch \
---exclude torchvision \
---exclude torchmetrics \
---exclude pytorch-lightning \
 --exclude nvidia-cublas-cu11 \
 --exclude nvidia-cuda-cupti-cu11 \
 --exclude nvidia-cuda-nvrtc-cu11 \
@@ -18,4 +14,10 @@ pip freeze \
 --exclude nvidia-nccl-cu11 \
 --exclude nvidia-nvtx-cu11 \
 --exclude physionet2023 \
---exclude mvtst \
+--exclude mvtst
+
+# Also exclude these if using an image that comes with it?
+# --exclude torch \
+# --exclude torchvision \
+# --exclude torchmetrics \
+# --exclude pytorch-lightning \

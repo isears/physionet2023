@@ -91,17 +91,18 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 1e-4,
-        "dropout": 0.1,
-        "d_model_multiplier": 8,
-        "num_layers": 1,
-        "n_heads": 8,
-        "dim_feedforward": 256,
+        "lr": 0.0018730765828665077,
+        "dropout": 0.06384001841146537,
+        "d_model_multiplier": 1,
+        "num_layers": 2,
+        "n_heads": 4,
+        "dim_feedforward": 128,
+        "batch_size": 16,
         "pos_encoding": "learnable",
         "activation": "gelu",
         "norm": "LayerNorm",
-        "optimizer_name": "AdamW",
-        "batch_size": 16,
+        "optimizer_name": "PlainRAdam",
+        "weight_decay": 0.01,
     }
 
     tst_config = TSTConfig(save_path="ConvTst", num_classes=5, **problem_params)
@@ -120,7 +121,8 @@ def single_dl_factory(
         ds,
         num_workers=config.cores_available,
         batch_size=tst_config.batch_size,
-        pin_memory=True,
+        # Only pin memory if we have GPUs
+        pin_memory=(config.gpus_available > 0),
     )
 
     return dl
@@ -161,14 +163,27 @@ def train_fn(data_path: str, log: bool = True):
 
     checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
 
+    if config.gpus_available > 0:
+        accelerator = "gpu"
+        devices = config.gpus_available
+    else:
+        accelerator = "cpu"
+        devices = 1
+
     trainer = pl.Trainer(
         max_epochs=10,
         gradient_clip_val=4.0,
         gradient_clip_algorithm="norm",
-        accelerator="gpu",
-        devices=config.gpus_available,
+        accelerator=accelerator,
+        devices=devices,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=5),
+            EarlyStopping(
+                monitor="val_loss",
+                mode="min",
+                verbose=True,
+                patience=10,
+                check_finite=False,
+            ),
             checkpoint_callback,
         ],
         enable_checkpointing=True,
