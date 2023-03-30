@@ -7,13 +7,18 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
+from torchmetrics.classification import (
+    BinaryAccuracy,
+    BinaryAUROC,
+    BinaryConfusionMatrix,
+    BinaryPrecision,
+)
 
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
 from physionet2023.modeling.scoringUtil import (
     ClassifierAUROC,
-    ClassifierCompetitionScore,
     CompetitionScore,
     RegressorAUROC,
 )
@@ -22,15 +27,23 @@ from physionet2023.modeling.scoringUtil import (
 class plConvTst(pl.LightningModule):
     def __init__(self, tst: ConvTST, tst_config: TSTConfig) -> None:
         super().__init__()
-        # TODO: damned if you do damned if you don't
-        # self.save_hyperparameters(ignore=["tst"])
         self.tst = tst
 
         self.tst_config = tst_config
-        self.loss_fn = torch.nn.CrossEntropyLoss()
+        self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.1]))
 
-        self.auroc_scorer = ClassifierAUROC()
-        self.competition_scorer = ClassifierCompetitionScore()
+        if config.gpus_available > 0:
+            device = "cuda"  # TODO: this will break if using ROCm (AMD)
+        else:
+            device = "cpu"
+
+        self.scorers = [
+            BinaryAUROC(),
+            BinaryPrecision().to(device),
+            BinaryAccuracy().to(device),
+            # BinaryConfusionMatrix().to(device),
+            CompetitionScore(),
+        ]
 
     def training_step(self, batch, batch_idx):
         X, y = batch
@@ -43,34 +56,32 @@ class plConvTst(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         X, y = batch
-        preds = torch.squeeze(self.tst(X))
+        logits = torch.squeeze(self.tst(X))
 
+        preds = torch.sigmoid(logits)
         loss = self.loss_fn(preds, y)
-        self.auroc_scorer.update(preds, y)
-        self.competition_scorer.update(preds, y)
 
-        self.log("val_loss", loss, on_step=False, on_epoch=True)
+        for s in self.scorers:
+            s.update(preds, y)
+
+        self.log("val_loss", loss, on_step=True, on_epoch=True)
 
         return loss
 
     def on_validation_epoch_end(self):
-        # val_loss = torch.tensor(validation_step_outputs).mean()
-        val_auroc = self.auroc_scorer.compute()
-        val_competition_score = self.competition_scorer.compute()
+        print("\nValidation scores:")
 
-        self.log("Validation AUC", val_auroc)
-        self.log("Validation Competition Score", val_competition_score)
+        for s in self.scorers:
+            final_score = s.compute()
+            print(f"\t{s.__class__.__name__}: {final_score}")
+            self.log(f"Validation {s.__class__.__name__}", final_score)
+            s.reset()
 
-        self.auroc_scorer.reset()
-        self.competition_scorer.reset()
-
-        print(
-            f"\nValidation auroc: {val_auroc:.4}, competition: {val_competition_score}"
-        )
+        print()
 
     def forward(self, X):
-        preds = self.tst(X)
-        return torch.nn.functional.softmax(preds, dim=1)
+        logits = self.tst(X)
+        return torch.sigmoid(logits)
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -91,21 +102,20 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 0.0018730765828665077,
-        "dropout": 0.06384001841146537,
-        "d_model_multiplier": 1,
-        "num_layers": 2,
-        "n_heads": 4,
-        "dim_feedforward": 128,
-        "batch_size": 16,
+        "lr": 1e-4,
+        "dropout": 0.1,
+        "d_model_multiplier": 8,
+        "num_layers": 1,
+        "n_heads": 8,
+        "dim_feedforward": 256,
         "pos_encoding": "learnable",
         "activation": "gelu",
         "norm": "LayerNorm",
-        "optimizer_name": "PlainRAdam",
-        "weight_decay": 0.01,
+        "optimizer_name": "AdamW",
+        "batch_size": 8,
     }
 
-    tst_config = TSTConfig(save_path="ConvTst", num_classes=5, **problem_params)
+    tst_config = TSTConfig(save_path="ConvTst", num_classes=1, **problem_params)
 
     return tst_config
 
@@ -146,6 +156,7 @@ def dataloader_factory(
 
 def train_fn(data_path: str, log: bool = True):
     tst_config = config_factory()
+    torch.set_float32_matmul_precision("medium")
 
     if log:
         logger = WandbLogger(
@@ -181,14 +192,15 @@ def train_fn(data_path: str, log: bool = True):
                 monitor="val_loss",
                 mode="min",
                 verbose=True,
-                patience=10,
+                patience=3,
                 check_finite=False,
             ),
             checkpoint_callback,
         ],
         enable_checkpointing=True,
+        enable_progress_bar=False,
         # For when doing sample-based datasets
-        val_check_interval=0.1,
+        # val_check_interval=0.1,
         # log_every_n_steps=7,
         logger=logger,
     )

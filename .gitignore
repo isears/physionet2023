@@ -9,3 +9,4 @@ notes.md
 /wandb
 /physionet2023wandb
 /cache
+/checkpoints

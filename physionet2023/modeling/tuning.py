@@ -85,11 +85,13 @@ def objective(trial: optuna.Trial) -> float:
         del train_dl
         del valid_dl
         torch.cuda.empty_cache()
+
         if "PYTORCH_CUDA_ALLOC_CONF" in str(e):
-            print(f"[WARNING] Caught OOM, skipping this trial")
-            return None
+            print(f"[WARNING] OOM for trial with params {trial.params}")
+            return 0.0
         else:
-            raise e
+            print(f"[WARNING] Trial failed with params: {trial.params}")
+            return 0.0
 
     best_state = torch.load(checkpoint_callback.best_model_path)["state_dict"]
     model.load_state_dict(best_state)

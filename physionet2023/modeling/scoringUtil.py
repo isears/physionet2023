@@ -103,13 +103,9 @@ class ClassifierAUROC(BinaryAUROC):
 
     def update(self, preds, target):
         # Predicting probability of "poor" outcome (CPC 3, 4, or 5)
-        s = torch.nn.functional.softmax(preds, dim=1)
-        poor_outcome_probabilities = s[:, 2] + s[:, 3] + s[:, 4]
-        poor_outcome_label = (
-            (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
-        ).float()
+        poor_outcome_probability = torch.sigmoid(preds)
 
-        return super().update(poor_outcome_probabilities, poor_outcome_label)
+        return super().update(poor_outcome_probability, target)
 
 
 class CompetitionScore(Metric):
@@ -141,14 +137,3 @@ class CompetitionScore(Metric):
         self.all_labels = list()
 
         return super().reset()
-
-
-class ClassifierCompetitionScore(CompetitionScore):
-    def update(self, preds, target):
-        s = torch.nn.functional.softmax(preds, dim=1)
-        poor_outcome_probabilities = s[:, 2] + s[:, 3] + s[:, 4]
-        poor_outcome_label = (
-            (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
-        ).float()
-
-        return super().update(poor_outcome_probabilities, poor_outcome_label)
