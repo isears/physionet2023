@@ -42,7 +42,7 @@ def objective(trial: optuna.Trial) -> float:
     trial.suggest_float("weight_decay", 0.0, 0.1)
 
     tst_config = TSTConfig(
-        save_path="cache/models/lightningTuning", num_classes=5, **trial.params
+        save_path="cache/models/lightningTuning", num_classes=1, **trial.params
     )
 
     # Maintain an effective batch size of 16 to prevent OOM
@@ -54,15 +54,20 @@ def objective(trial: optuna.Trial) -> float:
     else:
         accumulation_coeff = 1
 
-    kf = KFold(n_splits=5, random_state=42)
+    kf = KFold(n_splits=5)
     pds = PatientDataset()
 
     all_fold_scores = list()
-    for fold_idx, (train_indices, test_indices) in enumerate(kf.split(pds.patient_ids)):
+    for fold_idx, (train_indices, valid_indices) in enumerate(
+        kf.split(pds.patient_ids)
+    ):
         print(f"===== CV fold {fold_idx} =====")
 
-        train_dl = single_dl_factory(tst_config, pds.patient_ids[train_indices])
-        valid_dl = single_dl_factory(tst_config, pds.patient_ids[test_indices])
+        train_pids = [pds.patient_ids[idx] for idx in train_indices]
+        valid_pids = [pds.patient_ids[idx] for idx in valid_indices]
+
+        train_dl = single_dl_factory(tst_config, train_pids, pds.root_folder)
+        valid_dl = single_dl_factory(tst_config, valid_pids, pds.root_folder)
 
         model = lightning_tst_factory(
             tst_config,
@@ -116,6 +121,7 @@ def objective(trial: optuna.Trial) -> float:
         test_results = trainer.test(model=model, dataloaders=valid_dl)
         all_fold_scores.append(test_results[0]["Test Competition Score"])
 
+    print(f"CV finished, fold scores: {all_fold_scores}")
     return sum(all_fold_scores) / len(all_fold_scores)
 
 

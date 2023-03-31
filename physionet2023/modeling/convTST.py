@@ -46,6 +46,8 @@ class plConvTst(pl.LightningModule):
             CompetitionScore(),
         ]
 
+        self.test_losses = list()
+
     def training_step(self, batch, batch_idx):
         X, y = batch
         preds = torch.squeeze(self.tst(X))
@@ -79,6 +81,31 @@ class plConvTst(pl.LightningModule):
             s.reset()
 
         print()
+
+    def test_step(self, batch, batch_idx):
+        X, y = batch
+        logits = torch.squeeze(self.tst(X))
+        preds = torch.sigmoid(logits)
+        loss = self.loss_fn(preds, y)
+
+        for s in self.scorers:
+            s.update(preds, y)
+
+        self.test_losses.append(loss)
+        return loss
+
+    def on_test_epoch_end(self):
+        test_loss = torch.tensor(self.test_losses).mean()
+
+        for s in self.scorers:
+            final_score = s.compute()
+
+            if s.__class__.__name__ == "CompetitionScore":
+                test_competition_score = final_score
+
+        self.test_losses = list()
+
+        return test_competition_score
 
     def forward(self, X):
         logits = self.tst(X)
