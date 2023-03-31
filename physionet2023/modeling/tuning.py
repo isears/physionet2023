@@ -27,6 +27,9 @@ wandbc = WeightsAndBiasesCallback(
 
 @wandbc.track_in_wandb()
 def objective(trial: optuna.Trial) -> float:
+    # Adjust based on GPU capabilities
+    max_batch_size = 8
+
     # Parameters to tune:
     trial.suggest_float("lr", 1e-10, 0.1, log=True)
     trial.suggest_float("dropout", 0.01, 0.7)
@@ -34,7 +37,7 @@ def objective(trial: optuna.Trial) -> float:
     trial.suggest_int("num_layers", 1, 15)
     trial.suggest_categorical("n_heads", [4, 8, 16, 32, 64])
     trial.suggest_int("dim_feedforward", 64, 1024)
-    trial.suggest_int("batch_size", 16, 1024, 16)
+    trial.suggest_int("batch_size", max_batch_size, 512, max_batch_size)
     trial.suggest_categorical("pos_encoding", ["fixed", "learnable"])
     trial.suggest_categorical("activation", ["gelu", "relu"])
     trial.suggest_categorical("norm", ["BatchNorm", "LayerNorm"])
@@ -46,11 +49,11 @@ def objective(trial: optuna.Trial) -> float:
     )
 
     # Maintain an effective batch size of 16 to prevent OOM
-    if trial.params["batch_size"] > 16:
+    if trial.params["batch_size"] > max_batch_size:
         # NOTE: batch_size should always be divisible by 16 if it's > 16
-        assert trial.params["batch_size"] % 16 == 0
-        accumulation_coeff = int(trial.params["batch_size"] / 16)
-        tst_config.batch_size = 16
+        assert trial.params["batch_size"] % max_batch_size == 0
+        accumulation_coeff = int(trial.params["batch_size"] / max_batch_size)
+        tst_config.batch_size = max_batch_size
     else:
         accumulation_coeff = 1
 
@@ -84,9 +87,7 @@ def objective(trial: optuna.Trial) -> float:
             accelerator="gpu",
             devices=1,
             callbacks=[
-                EarlyStopping(
-                    monitor="val_loss", mode="min", verbose=True, patience=10
-                ),
+                EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=3),
                 checkpoint_callback,
             ],
             val_check_interval=0.1,
@@ -119,7 +120,7 @@ def objective(trial: optuna.Trial) -> float:
         model.load_state_dict(best_state)
 
         test_results = trainer.test(model=model, dataloaders=valid_dl)
-        all_fold_scores.append(test_results[0]["Test Competition Score"])
+        all_fold_scores.append(test_results[0]["Test CompetitionScore"])
 
     print(f"CV finished, fold scores: {all_fold_scores}")
     return sum(all_fold_scores) / len(all_fold_scores)
