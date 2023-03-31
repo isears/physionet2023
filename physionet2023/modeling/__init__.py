@@ -34,9 +34,6 @@ class GenericPlTst(pl.LightningModule):
             CompetitionScore(),
         ]
 
-        # self.test_losses = list()
-        # self.val_losses = list()
-
     def training_step(self, batch, batch_idx):
         X, y = batch
         preds = self.tst(X)
@@ -81,10 +78,6 @@ class GenericPlTst(pl.LightningModule):
             self.log(f"Validation {s.__class__.__name__}", final_score)
             s.reset()
 
-        # final_val_loss = sum(self.val_losses) / len(self.val_losses)
-        # print(f"\tLoss: {final_val_loss}")
-        # self.log(f"val_loss", final_val_loss)
-        # self.val_losses = list()
         print()
 
     def test_step(self, batch, batch_idx):
@@ -96,20 +89,16 @@ class GenericPlTst(pl.LightningModule):
         for s in self.scorers:
             s.update(preds, y)
 
-        self.test_losses.append(loss)
         return loss
 
     def on_test_epoch_end(self):
-        test_loss = torch.tensor(self.test_losses).mean()
-
         for s in self.scorers:
             final_score = s.compute()
 
             if s.__class__.__name__ == "CompetitionScore":
                 test_competition_score = final_score
-                self.log(f"Test {s.__class__.__name__}", final_score)
 
-        self.test_losses = list()
+            self.log(f"Test {s.__class__.__name__}", final_score)
 
         return test_competition_score
 
