@@ -67,26 +67,30 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
             preds.append(model(X))
 
     preds = torch.concat(preds)  # concatenate all batches
-    # TODO: it seems like sometimes the probability distribution here is bimodal (either 1 or 5)
-    # This is obviously undersireable; should think about this more
-    preds = preds.mean(dim=0)  # average the probs for every class
 
-    predicted_CPC = int(preds.argmax()) + 1
+    # TODO: maybe favor more confident predictions one way or another here
+    outcome_probability = preds.mean()
 
-    # NOTE: this could result in a predicted CPC in one class, but a predicted outcome in another class
-    # E.g. [0.0, 0.4, 0.2, 0.2, 0.2]
-    #   predicted CPC = 2 (good outcome)
-    #   predicted outcome = 1 (bad outcome)
-    #   predicted outcome probability (of bad outcome) = 60%
-    probability_density_bad = float(preds[4] + preds[3] + preds[2])
-    probability_density_good = float(preds[1] + preds[0])
+    """
+    1: 0% - 25%
+    2: 25% - 50%
+    3: 50% - 66.67%
+    4: 66.67% - 83.33%
+    5: 83.33% - 100%
+    """
 
-    if probability_density_bad > probability_density_good:
-        outcome_binary = 1.0
-    else:
-        outcome_binary = 0.0
+    if outcome_probability > 0.8333:
+        predicted_CPC = 5
+    elif outcome_probability > 0.6667:
+        predicted_CPC = 4
+    elif outcome_probability > 0.5:
+        predicted_CPC = 3
+    elif outcome_probability > 0.25:
+        predicted_CPC = 2
+    elif outcome_probability > 0.0:
+        predicted_CPC = 1
 
-    outcome_probability = probability_density_bad
+    outcome_binary = int(outcome_probability > 0.5)
 
     return outcome_binary, outcome_probability, predicted_CPC
 
