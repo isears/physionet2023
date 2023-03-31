@@ -22,7 +22,9 @@ class SpectrogramCNN(torch.nn.Module):
         )
         self.relu2 = torch.nn.ReLU()
         self.maxpool2 = torch.nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.fc1 = torch.nn.Linear(in_features=800, out_features=500)
+
+        # TODO: this got hard-coded but maybe shouldn't be
+        self.fc1 = torch.nn.Linear(in_features=22500, out_features=500)
         self.relu3 = torch.nn.ReLU()
         self.fc2 = torch.nn.Linear(in_features=500, out_features=1)
 
@@ -30,9 +32,11 @@ class SpectrogramCNN(torch.nn.Module):
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.maxpool1(x)
+
         x = self.conv2(x)
         x = self.relu2(x)
         x = self.maxpool2(x)
+
         x = torch.flatten(x, 1)
         x = self.fc1(x)
         x = self.relu3(x)

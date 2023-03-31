@@ -127,6 +127,11 @@ class CompetitionScore(Metric):
         preds_np = torch.cat(self.all_preds).cpu().numpy()
         labels_np = torch.cat(self.all_labels).cpu().numpy()
 
+        if labels_np.ndim > 1:
+            labels_np = np.squeeze(labels_np)
+        if preds_np.ndim > 1:
+            preds_np = np.squeeze(preds_np)
+
         return compute_challenge_score(labels_np, preds_np)
 
     def reset(self):
