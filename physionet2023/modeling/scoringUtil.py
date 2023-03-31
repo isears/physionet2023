@@ -2,7 +2,7 @@ import numpy as np
 import torch
 from sklearn.metrics import roc_auc_score
 from torchmetrics import Metric
-from torchmetrics.classification import BinaryAUROC
+from torchmetrics.classification import BinaryAUROC, BinaryConfusionMatrix
 
 
 # The original compute challenge score function from the physionet repository
@@ -137,3 +137,13 @@ class CompetitionScore(Metric):
         self.all_labels = list()
 
         return super().reset()
+
+
+class PrintableBinaryConfusionMatrix(BinaryConfusionMatrix):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def compute(self):
+        cm = super().compute()
+
+        return f"TP {cm[0,0]}; FP {cm[0,1]}; TN {cm[1,0]}; FN {cm[1,1]}"

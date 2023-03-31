@@ -308,14 +308,15 @@ class FftDownsamplingDataset(RecordingDataset):
 class SampleDataset(RecordingDataset):
     def __init__(
         self,
-        pids: list,
+        patient_ids: list,
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
+        for_classification=True,
         **super_kwargs,
     ):
-        super().__init__(pids, **super_kwargs)
-
+        super().__init__(patient_ids, include_static=False, **super_kwargs)
+        self.for_classification = for_classification
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()
 
@@ -352,8 +353,11 @@ class SampleDataset(RecordingDataset):
             sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
 
         if self.normalize:
-            sample_data = (sample_data - sample_data.mean()) / (sample_data.std())
-            sample_data = np.nan_to_num(sample_data)  # Weirdly some data has std of 0
+            with np.errstate(divide="ignore"):
+                sample_data = (sample_data - sample_data.mean()) / (sample_data.std())
+                sample_data = np.nan_to_num(
+                    sample_data
+                )  # Weirdly some data has std of 0
 
         static_data = torch.tensor(
             [
@@ -362,12 +366,18 @@ class SampleDataset(RecordingDataset):
             ]
         )
 
+        label = float(patient_metadata["CPC"])
+
+        if self.for_classification:
+            label = torch.tensor(float(label > 2))
+        else:
+            label = torch.tensor(label)
+
         # NOTE: copy was necessary to prevent "negative stride error" after decimation
         # Not sure what the performance implications are
         return (
             torch.tensor(sample_data.copy()),
-            torch.nan_to_num(static_data, 0.0),
-            torch.tensor(float(patient_metadata["CPC"])),
+            label,
         )
 
 

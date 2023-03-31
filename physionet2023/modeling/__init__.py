@@ -3,15 +3,13 @@ import torch
 from mvtst.models import TSTConfig
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from torchmetrics.classification import (
-    BinaryAccuracy,
-    BinaryAUROC,
-    BinaryConfusionMatrix,
-    BinaryPrecision,
-)
+from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryPrecision
 
 from physionet2023 import config
-from physionet2023.modeling.scoringUtil import CompetitionScore
+from physionet2023.modeling.scoringUtil import (
+    CompetitionScore,
+    PrintableBinaryConfusionMatrix,
+)
 
 
 class GenericPlTst(pl.LightningModule):
@@ -32,11 +30,12 @@ class GenericPlTst(pl.LightningModule):
             BinaryAUROC(),
             BinaryPrecision().to(device),
             BinaryAccuracy().to(device),
-            # BinaryConfusionMatrix().to(device),
+            # PrintableBinaryConfusionMatrix().to(device),
             CompetitionScore(),
         ]
 
         self.test_losses = list()
+        self.val_losses = list()
 
     def training_step(self, batch, batch_idx):
         X, y = batch
@@ -57,12 +56,12 @@ class GenericPlTst(pl.LightningModule):
         for s in self.scorers:
             s.update(preds, y)
 
-        self.log("val_loss", loss, on_step=True, on_epoch=True)
+        self.val_losses.append(loss)
 
         return loss
 
     def on_validation_epoch_end(self):
-        print("\nValidation scores:")
+        print("\n\nValidation scores:")
 
         for s in self.scorers:
             final_score = s.compute()
@@ -70,6 +69,10 @@ class GenericPlTst(pl.LightningModule):
             self.log(f"Validation {s.__class__.__name__}", final_score)
             s.reset()
 
+        final_val_loss = sum(self.val_losses) / len(self.val_losses)
+        print(f"\tLoss: {final_val_loss}")
+        self.log(f"val_loss", final_val_loss)
+        self.val_losses = list()
         print()
 
     def test_step(self, batch, batch_idx):
@@ -107,8 +110,8 @@ class GenericPlTst(pl.LightningModule):
 
 
 class GenericPlTrainer(pl.Trainer):
-    def __init__(self, logger=None, **extra_args):
-        self.checkpoint_callback = ModelCheckpoint(
+    def __init__(self, logger=None, enable_progress_bar=False, **extra_args):
+        self.my_checkpoint_callback = ModelCheckpoint(
             save_top_k=1, monitor="val_loss", mode="min"
         )
 
@@ -133,10 +136,10 @@ class GenericPlTrainer(pl.Trainer):
                     patience=3,
                     check_finite=False,
                 ),
-                self.checkpoint_callback,
+                self.my_checkpoint_callback,
             ],
             enable_checkpointing=True,
-            enable_progress_bar=False,
+            enable_progress_bar=enable_progress_bar,
             # For when doing sample-based datasets
             # val_check_interval=0.1,
             # log_every_n_steps=7,
@@ -145,4 +148,4 @@ class GenericPlTrainer(pl.Trainer):
         )
 
     def get_best_params(self):
-        return torch.load(self.checkpoint_callback.best_model_path)["state_dict"]
+        return torch.load(self.my_checkpoint_callback.best_model_path)["state_dict"]
