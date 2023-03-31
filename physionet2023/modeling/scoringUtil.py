@@ -86,7 +86,7 @@ def compute_auroc_regressor(labels, outputs):
         return 0.5
 
 
-class RegressorAUROC(BinaryAUROC):
+class RegressionAUROC(BinaryAUROC):
     def __init__(self) -> None:
         super().__init__()
 
@@ -142,6 +142,13 @@ class CompetitionScore(Metric):
         self.all_labels = list()
 
         return super().reset()
+
+
+class RegressionCompetitionScore(CompetitionScore):
+    def update(self, preds, target):
+        binary_outputs = torch.clip((preds - 1) / 4, 0.0, 1.0)
+        binary_labels = (target > 2).float()
+        return super().update(binary_outputs, binary_labels)
 
 
 class PrintableBinaryConfusionMatrix(BinaryConfusionMatrix):

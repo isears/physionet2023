@@ -16,7 +16,7 @@ from physionet2023.dataProcessing.datasets import (
     SampleDataset,
     just_give_me_dataloaders,
 )
-from physionet2023.modeling import GenericPlTrainer, GenericPlTst
+from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
 from physionet2023.modeling.scoringUtil import (
     compute_auroc_regressor,
     compute_challenge_score_regressor,
@@ -57,7 +57,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
         max_len=ds.sample_len,
     )
 
-    lightning_wrapper = GenericPlTst(tst, tst_config)
+    lightning_wrapper = GenericPlRegressor(tst, tst_config)
 
     return lightning_wrapper
 
@@ -68,7 +68,7 @@ def single_dl_factory(
     ds = FftDataset(
         root_folder=data_path,
         patient_ids=pids,
-        for_classification=True,
+        for_classification=False,
         normalize=False,
         **ds_args,
     )

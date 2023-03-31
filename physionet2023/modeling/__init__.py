@@ -9,6 +9,8 @@ from physionet2023 import config
 from physionet2023.modeling.scoringUtil import (
     CompetitionScore,
     PrintableBinaryConfusionMatrix,
+    RegressionAUROC,
+    RegressionCompetitionScore,
 )
 
 
@@ -51,9 +53,8 @@ class GenericPlTst(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         X, y = batch
-        logits = self.tst(X)
+        preds = self.forward(X)
 
-        preds = torch.sigmoid(logits)
         loss = self.loss_fn(preds, y)
 
         for s in self.scorers:
@@ -82,8 +83,7 @@ class GenericPlTst(pl.LightningModule):
 
     def test_step(self, batch, batch_idx):
         X, y = batch
-        logits = self.tst(X)
-        preds = torch.sigmoid(logits)
+        preds = self.forward(X)
         loss = self.loss_fn(preds, y)
 
         for s in self.scorers:
@@ -108,6 +108,18 @@ class GenericPlTst(pl.LightningModule):
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
+
+
+class GenericPlRegressor(GenericPlTst):
+    def __init__(self, tst, tst_config: TSTConfig) -> None:
+        super().__init__(tst, tst_config)
+
+        self.scorers = [RegressionAUROC(), RegressionCompetitionScore()]
+
+        self.loss_fn = torch.nn.MSELoss()
+
+    def forward(self, X):
+        return self.tst(X)
 
 
 class GenericPlTrainer(pl.Trainer):
