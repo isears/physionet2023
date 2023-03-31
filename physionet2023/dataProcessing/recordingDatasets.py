@@ -53,9 +53,9 @@ class SpectrogramDataset(RecordingDataset):
 
         if self.for_classification and not self.for_testing:
             classification_label = (label > 2).float()
-            return torch.tensor(X), classification_label
+            return torch.tensor(X), classification_label.unsqueeze(-1)
         else:
-            return torch.tensor(X), label
+            return torch.tensor(X), label.unsqueeze(-1)
 
 
 if __name__ == "__main__":

@@ -377,13 +377,13 @@ class SampleDataset(RecordingDataset):
         # Not sure what the performance implications are
         return (
             torch.tensor(sample_data.copy()),
-            label,
+            label.unsqueeze(-1),
         )
 
 
 class FftDataset(SampleDataset):
-    def __init__(self, pids: list, **super_kwargs):
-        super().__init__(pids, **super_kwargs)
+    def __init__(self, patient_ids: list, **super_kwargs):
+        super().__init__(patient_ids=patient_ids, **super_kwargs)
 
         if self.resample_factor:
             raise NotImplementedError("FFT automatically downsamples to sample_len")
@@ -414,12 +414,19 @@ class FftDataset(SampleDataset):
             ]
         )
 
+        label = float(patient_metadata["CPC"])
+
+        if self.for_classification:
+            label = torch.tensor(float(label > 2))
+        else:
+            label = torch.tensor(label)
+
         # NOTE: copy was necessary to prevent "negative stride error" after decimation
         # Not sure what the performance implications are
         return (
             torch.tensor(X_fft.copy()),
-            torch.nan_to_num(static_data, 0.0),
-            torch.tensor(float(patient_metadata["CPC"])),
+            # torch.nan_to_num(static_data, 0.0),
+            label.unsqueeze(-1),
         )
 
 

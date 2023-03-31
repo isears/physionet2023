@@ -65,7 +65,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 def single_dl_factory(
     tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
 ):
-    ds = SampleDataset(
+    ds = FftDataset(
         root_folder=data_path,
         patient_ids=pids,
         for_classification=True,

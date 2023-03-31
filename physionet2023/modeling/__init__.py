@@ -34,21 +34,27 @@ class GenericPlTst(pl.LightningModule):
             CompetitionScore(),
         ]
 
-        self.test_losses = list()
-        self.val_losses = list()
+        # self.test_losses = list()
+        # self.val_losses = list()
 
     def training_step(self, batch, batch_idx):
         X, y = batch
-        preds = torch.squeeze(self.tst(X))
+        preds = self.tst(X)
 
         loss = self.loss_fn(preds, y)
 
-        self.log("train_loss", loss, batch_size=self.tst_config.batch_size)
+        self.log(
+            "train_loss",
+            loss,
+            on_step=True,
+            on_epoch=True,
+            batch_size=self.tst_config.batch_size,
+        )
         return loss
 
     def validation_step(self, batch, batch_idx):
         X, y = batch
-        logits = torch.squeeze(self.tst(X))
+        logits = self.tst(X)
 
         preds = torch.sigmoid(logits)
         loss = self.loss_fn(preds, y)
@@ -56,7 +62,13 @@ class GenericPlTst(pl.LightningModule):
         for s in self.scorers:
             s.update(preds, y)
 
-        self.val_losses.append(loss)
+        self.log(
+            "val_loss",
+            loss,
+            on_step=False,
+            on_epoch=True,
+            batch_size=self.tst_config.batch_size,
+        )
 
         return loss
 
@@ -69,15 +81,15 @@ class GenericPlTst(pl.LightningModule):
             self.log(f"Validation {s.__class__.__name__}", final_score)
             s.reset()
 
-        final_val_loss = sum(self.val_losses) / len(self.val_losses)
-        print(f"\tLoss: {final_val_loss}")
-        self.log(f"val_loss", final_val_loss)
-        self.val_losses = list()
+        # final_val_loss = sum(self.val_losses) / len(self.val_losses)
+        # print(f"\tLoss: {final_val_loss}")
+        # self.log(f"val_loss", final_val_loss)
+        # self.val_losses = list()
         print()
 
     def test_step(self, batch, batch_idx):
         X, y = batch
-        logits = torch.squeeze(self.tst(X))
+        logits = self.tst(X)
         preds = torch.sigmoid(logits)
         loss = self.loss_fn(preds, y)
 
