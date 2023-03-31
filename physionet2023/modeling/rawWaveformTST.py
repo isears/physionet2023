@@ -100,7 +100,7 @@ def dataloader_factory(
     return train_dl, valid_dl
 
 
-if __name__ == "__main__":
+def train_fn(data_folder, log):
     tst_config = config_factory()
 
     # wandb_logger = WandbLogger(
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     #     job_type="train",
     # )
 
-    training_dl, valid_dl = dataloader_factory(tst_config)
+    training_dl, valid_dl = dataloader_factory(tst_config, data_path=data_folder)
 
     model = lightning_tst_factory(tst_config, training_dl.dataset)
 
@@ -126,3 +126,9 @@ if __name__ == "__main__":
         train_dataloaders=training_dl,
         val_dataloaders=valid_dl,
     )
+
+    return trainer.get_best_params()
+
+
+if __name__ == "__main__":
+    train_fn()
