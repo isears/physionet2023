@@ -86,15 +86,28 @@ def compute_auroc_regressor(labels, outputs):
         return 0.5
 
 
+def regression_to_probability(regression_pred, clip=True):
+    if clip:
+        regression_pred = torch.clip(regression_pred, 1.0, 5.0)
+
+    outcome_probability = torch.where(
+        regression_pred >= 2.5,
+        (regression_pred - 2.5) * 0.2,
+        (regression_pred - 1) * (1 / 3),
+    )
+
+    return outcome_probability
+
+
 class RegressionAUROC(BinaryAUROC):
     def __init__(self) -> None:
         super().__init__()
 
     def update(self, preds, target):
-        binary_outputs = torch.clip((preds - 1) / 4, 0.0, 1.0)
+        probability_outputs = regression_to_probability(preds)
         binary_labels = (target > 2).float()
 
-        return super().update(binary_outputs, binary_labels)
+        return super().update(probability_outputs, binary_labels)
 
 
 class ClassifierAUROC(BinaryAUROC):
@@ -146,9 +159,9 @@ class CompetitionScore(Metric):
 
 class RegressionCompetitionScore(CompetitionScore):
     def update(self, preds, target):
-        binary_outputs = torch.clip((preds - 1) / 4, 0.0, 1.0)
+        probability_outputs = regression_to_probability(preds)
         binary_labels = (target > 2).float()
-        return super().update(binary_outputs, binary_labels)
+        return super().update(probability_outputs, binary_labels)
 
 
 class PrintableBinaryConfusionMatrix(BinaryConfusionMatrix):

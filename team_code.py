@@ -23,6 +23,7 @@ from physionet2023.modeling.rawWaveformTST import (
     single_dl_factory,
     train_fn,
 )
+from physionet2023.modeling.scoringUtil import regression_to_probability
 
 ################################################################################
 #
@@ -66,28 +67,12 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
         for X, _ in dl:
             preds.append(model(X))
 
-    preds = torch.concat(preds)  # concatenate all batches
+    avg_pred = torch.concat(preds).mean()
 
-    # TODO: it seems like sometimes the probability distribution here is bimodal (either 1 or 5)
-    # This is obviously undersireable; should think about this more
-    preds = preds.mean(dim=0)  # average the probs for every class
+    outcome_probability = regression_to_probability(avg_pred)
 
-    predicted_CPC = int(preds.argmax()) + 1
-
-    # NOTE: this could result in a predicted CPC in one class, but a predicted outcome in another class
-    # E.g. [0.0, 0.4, 0.2, 0.2, 0.2]
-    #   predicted CPC = 2 (good outcome)
-    #   predicted outcome = 1 (bad outcome)
-    #   predicted outcome probability (of bad outcome) = 60%
-    probability_density_bad = float(preds[4] + preds[3] + preds[2])
-    probability_density_good = float(preds[1] + preds[0])
-
-    if probability_density_bad > probability_density_good:
-        outcome_binary = 1.0
-    else:
-        outcome_binary = 0.0
-
-    outcome_probability = probability_density_bad
+    predicted_CPC = int(avg_pred.round())
+    outcome_binary = int(outcome_probability.round())
 
     return outcome_binary, outcome_probability, predicted_CPC
 
