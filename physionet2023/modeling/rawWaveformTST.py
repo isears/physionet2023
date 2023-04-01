@@ -70,6 +70,7 @@ def single_dl_factory(
         patient_ids=pids,
         for_classification=False,
         normalize=False,
+        sample_len=1000,
         **ds_args,
     )
 
@@ -85,7 +86,7 @@ def single_dl_factory(
 
 
 def dataloader_factory(
-    tst_config: TSTConfig, data_path: str = "./data", deterministic_split=False
+    tst_config: TSTConfig, data_path: str = "./data", deterministic_split=True
 ):
     pids = PatientDataset(root_folder=data_path).patient_ids
 
@@ -101,6 +102,7 @@ def dataloader_factory(
 
 
 def train_fn(data_folder, log):
+    torch.set_float32_matmul_precision("medium")
     tst_config = config_factory()
 
     # wandb_logger = WandbLogger(
@@ -116,7 +118,7 @@ def train_fn(data_folder, log):
 
     trainer = GenericPlTrainer(
         logger=None,
-        val_check_interval=0.1,
+        val_check_interval=0.005,
         # log_every_n_steps=7,
         enable_progress_bar=True,
     )  # TODO: add logger when things are actually working
@@ -131,4 +133,4 @@ def train_fn(data_folder, log):
 
 
 if __name__ == "__main__":
-    train_fn()
+    train_fn("./data", None)

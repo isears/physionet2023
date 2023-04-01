@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import GenericPlTrainer, GenericPlTst
+from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
 
 
 class SpectrogramCNN(torch.nn.Module):
@@ -24,7 +24,7 @@ class SpectrogramCNN(torch.nn.Module):
         self.maxpool2 = torch.nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
 
         # TODO: this got hard-coded but maybe shouldn't be
-        self.fc1 = torch.nn.Linear(in_features=22500, out_features=500)
+        self.fc1 = torch.nn.Linear(in_features=44800, out_features=500)
         self.relu3 = torch.nn.ReLU()
         self.fc2 = torch.nn.Linear(in_features=500, out_features=1)
 
@@ -33,9 +33,9 @@ class SpectrogramCNN(torch.nn.Module):
         x = self.relu1(x)
         x = self.maxpool1(x)
 
-        x = self.conv2(x)
-        x = self.relu2(x)
-        x = self.maxpool2(x)
+        # x = self.conv2(x)
+        # x = self.relu2(x)
+        # x = self.maxpool2(x)
 
         x = torch.flatten(x, 1)
         x = self.fc1(x)
@@ -47,7 +47,7 @@ class SpectrogramCNN(torch.nn.Module):
 def model_factory(tst_config, ds):
     cnn = SpectrogramCNN(len(ds.channels))
 
-    lightning_wrapper = GenericPlTst(cnn, tst_config)
+    lightning_wrapper = GenericPlRegressor(cnn, tst_config)
 
     return lightning_wrapper
 
@@ -55,7 +55,7 @@ def model_factory(tst_config, ds):
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 1e-4,
+        "lr": 1e-5,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 1,
@@ -65,10 +65,10 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 8,
+        "batch_size": 64,
     }
 
-    tst_config = TSTConfig(save_path="SpectrogramCNN", num_classes=1, **problem_params)
+    tst_config = TSTConfig(save_path="SpectrogramCNN", **problem_params)
 
     return tst_config
 
@@ -77,7 +77,7 @@ def single_dl_factory(
     tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
 ):
     ds = SpectrogramDataset(
-        root_folder=data_path, patient_ids=pids, for_classification=True, **ds_args
+        root_folder=data_path, patient_ids=pids, for_classification=False, **ds_args
     )
 
     dl = torch.utils.data.DataLoader(
@@ -108,7 +108,7 @@ def dataloader_factory(
 
 
 def train_fn(data_path: str, log: bool = True):
-    torch.set_float32_matmul_precision("medium")
+    # torch.set_float32_matmul_precision("medium")
     tst_config = config_factory()
 
     train_dl, valid_dl = dataloader_factory(
@@ -127,7 +127,7 @@ def train_fn(data_path: str, log: bool = True):
     # else:
     #     logger = None
 
-    trainer = GenericPlTrainer()
+    trainer = GenericPlTrainer(enable_progress_bar=True, val_check_interval=0.1)
 
     trainer.fit(
         model=model,
