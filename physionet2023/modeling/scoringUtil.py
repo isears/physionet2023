@@ -1,5 +1,8 @@
 import numpy as np
+import torch
 from sklearn.metrics import roc_auc_score
+from torchmetrics import Metric
+from torchmetrics.classification import BinaryAUROC
 
 
 # The original compute challenge score function from the physionet repository
@@ -81,3 +84,68 @@ def compute_auroc_regressor(labels, outputs):
         return roc_auc_score(binary_labels, binary_outputs)
     except ValueError:
         return 0.5
+
+
+class RegressionAUROC(BinaryAUROC):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def update(self, preds, target):
+        binary_outputs = torch.clip((preds - 1) / 4, 0.0, 1.0)
+        binary_labels = (target > 2).float()
+
+        return super().update(binary_outputs, binary_labels)
+
+
+class ClassifierAUROC(BinaryAUROC):
+    def __init__(self):
+        super().__init__()
+
+    def update(self, preds, target):
+        # Predicting probability of "poor" outcome (CPC 3, 4, or 5)
+        poor_outcome_probability = torch.sigmoid(preds)
+
+        return super().update(poor_outcome_probability, target)
+
+
+class CompetitionScore(Metric):
+    is_differentiable = False
+    higher_is_better = True
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self.all_preds = list()
+        self.all_labels = list()
+
+    def update(self, preds, target):
+        self.all_preds.append(preds)
+        self.all_labels.append(target)
+
+    def compute(self):
+        # TODO: implementing competition score in pytorch would allow computation on GPU instead of having to move to CPU
+        preds_np = torch.cat(self.all_preds).cpu().numpy()
+        labels_np = torch.cat(self.all_labels).cpu().numpy()
+
+        if labels_np.ndim > 1:
+            labels_np = np.squeeze(labels_np)
+        if preds_np.ndim > 1:
+            preds_np = np.squeeze(preds_np)
+
+        return compute_challenge_score(labels_np, preds_np)
+
+    def reset(self):
+        del self.all_preds
+        del self.all_labels
+
+        self.all_preds = list()
+        self.all_labels = list()
+
+        return super().reset()
+
+
+class RegressionCompetitionScore(CompetitionScore):
+    def update(self, preds, target):
+        binary_outputs = torch.clip((preds - 1) / 4, 0.0, 1.0)
+        binary_labels = (target > 2).float()
+        return super().update(binary_outputs, binary_labels)

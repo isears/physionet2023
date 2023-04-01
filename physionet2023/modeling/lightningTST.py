@@ -10,10 +10,13 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
-from physionet2023.dataProcessing.datasets import (FftDataset,
-                                                   just_give_me_dataloaders)
+from physionet2023.dataProcessing.datasets import FftDataset, just_give_me_dataloaders
 from physionet2023.modeling.scoringUtil import (
-    compute_auroc_regressor, compute_challenge_score_regressor)
+    RegressionAUROC,
+    RegressionCompetitionScore,
+    compute_auroc_regressor,
+    compute_challenge_score_regressor,
+)
 
 
 class LitTst(pl.LightningModule):
@@ -30,23 +33,7 @@ class LitTst(pl.LightningModule):
         self.auroc_metric = compute_auroc_regressor
         self.competition_metric = compute_challenge_score_regressor
 
-    def _do_scoring(
-        self, batch, batch_idx
-    ):  # TODO: use this instead of re-writing every time we want a full eval
-        X, y, pm, IDs = batch
-        preds = torch.squeeze(self.tst(X, pm))
-
-        val_loss = torch.nn.functional.mse_loss(preds, y)
-        self.log(
-            "val_loss",
-            val_loss,
-            batch_size=self.tst_config.batch_size
-            # on_step=False,
-            # on_epoch=True,
-            # prog_bar=True,
-            # sync_dist=True,
-        )
-        return {"loss": val_loss, "preds": preds, "target": y}
+        self.scorers = [RegressionAUROC(), RegressionCompetitionScore()]
 
     def training_step(self, batch, batch_idx):
         X, y, pm, IDs = batch
@@ -63,6 +50,9 @@ class LitTst(pl.LightningModule):
         X, y, pm, IDs = batch
         preds = torch.squeeze(self.tst(X, pm))
 
+        for s in self.scorers:
+            s.update(preds, y)
+
         val_loss = torch.nn.functional.mse_loss(preds, y)
         self.log(
             "val_loss",
@@ -74,35 +64,39 @@ class LitTst(pl.LightningModule):
         )
         return {"loss": val_loss, "preds": preds, "target": y}
 
-    def validation_step_end(self, outputs):
-        auc = self.auroc_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Validation AUC", auc)
+    def on_validation_epoch_end(self):
+        print("\n\nValidation scores:")
 
-        comp = self.competition_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Validation Competition Score", comp)
+        for s in self.scorers:
+            final_score = s.compute()
+            print(f"\t{s.__class__.__name__}: {final_score}")
+            self.log(f"Validation {s.__class__.__name__}", final_score)
+            s.reset()
+
+        print()
 
     def test_step(self, batch, batch_idx):
         X, y, pm, IDx = batch
         preds = torch.squeeze(self.tst(X, pm))
+
+        for s in self.scorers:
+            s.update(preds, y)
+
         test_loss = torch.nn.functional.mse_loss(preds, y)
         self.log("test_loss", test_loss)
 
         return {"loss": test_loss, "preds": preds, "target": y}
 
-    def test_step_end(self, outputs):
-        auc = self.auroc_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Test AUC", auc)
+    def on_test_epoch_end(self):
+        for s in self.scorers:
+            final_score = s.compute()
 
-        comp = self.competition_metric(
-            outputs["target"].cpu().numpy(), outputs["preds"].cpu().numpy()
-        )
-        self.log("Test Competiton Score", comp)
+            if s.__class__.__name__ == "CompetitionScore":
+                test_competition_score = final_score
+
+            self.log(f"Test {s.__class__.__name__}", final_score)
+
+        return test_competition_score
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -112,7 +106,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
     tst = TSTransformerEncoderClassiregressor(
         **tst_config.generate_model_params(),
         feat_dim=ds.dataset.features_dim,
-        max_len=ds.dataset.sample_len
+        max_len=ds.dataset.sample_len,
     )
 
     lightning_wrapper = LitTst(tst, tst_config)
