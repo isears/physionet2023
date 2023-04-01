@@ -138,7 +138,7 @@ def train_fn(data_folder, log):
         val_dataloaders=valid_dl,
     )
 
-    return trainer.get_best_params()
+    return torch.load(checkpoint_callback.best_model_path)["state_dict"]
 
 
 if __name__ == "__main__":
