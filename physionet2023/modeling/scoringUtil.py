@@ -92,7 +92,7 @@ def regression_to_probability(regression_pred, clip=True):
 
     outcome_probability = torch.where(
         regression_pred >= 2.5,
-        (regression_pred - 2.5) * 0.2,
+        ((regression_pred - 2.5) * 0.2) + 0.5,
         (regression_pred - 1) * (1 / 3),
     )
 
