@@ -6,8 +6,10 @@ from mvtst.models import TSTConfig
 # from optuna.integration.wandb import WeightsAndBiasesCallback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import KFold, train_test_split
 
+import wandb
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.modeling.rawWaveformTST import (
@@ -32,12 +34,13 @@ def objective(trial: optuna.Trial) -> float:
     trial.suggest_categorical("pos_encoding", ["fixed", "learnable"])
     trial.suggest_categorical("activation", ["gelu", "relu"])
     trial.suggest_categorical("norm", ["BatchNorm", "LayerNorm"])
-    trial.suggest_categorical("optimizer_name", ["AdamW", "PlainRAdam", "RAdam"])
-    trial.suggest_float("weight_decay", 0.0, 0.1)
+    trial.suggest_categorical("optimizer_name", ["Adam", "AdamW", "RAdam"])
+    trial.suggest_categorical("weight_decay", [0.0, 1e-5, 1e-4, 1e-3])
 
-    tst_config = TSTConfig(
-        save_path="cache/models/lightningTuning", num_classes=1, **trial.params
-    )
+    print("Starting trial with params:")
+    print(trial.params)
+
+    tst_config = TSTConfig(save_path="cache/models/lightningTuning", **trial.params)
 
     # Maintain an effective batch size of 16 to prevent OOM
     if trial.params["batch_size"] > max_batch_size:
@@ -60,6 +63,13 @@ def objective(trial: optuna.Trial) -> float:
         train_dl.dataset,
     )
 
+    logger = WandbLogger(
+        project="physionet2023wandb",
+        config=tst_config,
+        group="FftTstTuner",
+        job_type="train",
+    )
+
     checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
     trainer = pl.Trainer(
         max_epochs=5,
@@ -75,6 +85,7 @@ def objective(trial: optuna.Trial) -> float:
         enable_checkpointing=True,
         accumulate_grad_batches=accumulation_coeff,
         enable_progress_bar=False,
+        logger=logger,
     )
 
     try:
@@ -83,12 +94,17 @@ def objective(trial: optuna.Trial) -> float:
             train_dataloaders=train_dl,
             val_dataloaders=valid_dl,
         )
+
+        wandb.finish()
+
     except RuntimeError as e:
         del trainer
         del model
         del train_dl
         del valid_dl
         torch.cuda.empty_cache()
+
+        wandb.finish()
 
         if "PYTORCH_CUDA_ALLOC_CONF" in str(e):
             print(f"[WARNING] OOM for trial with params {trial.params}")
