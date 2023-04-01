@@ -91,9 +91,9 @@ def dataloader_factory(
     pids = PatientDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
-        train_pids, valid_pids = train_test_split(pids, random_state=42)
+        train_pids, valid_pids = train_test_split(pids, random_state=42, test_size=0.1)
     else:
-        train_pids, valid_pids = train_test_split(pids)
+        train_pids, valid_pids = train_test_split(pids, test_size=0.1)
 
     train_dl = single_dl_factory(tst_config, train_pids, data_path)
     valid_dl = single_dl_factory(tst_config, valid_pids, data_path)
@@ -102,7 +102,6 @@ def dataloader_factory(
 
 
 def train_fn(data_folder, log):
-    torch.set_float32_matmul_precision("medium")
     tst_config = config_factory()
 
     # wandb_logger = WandbLogger(
@@ -116,11 +115,21 @@ def train_fn(data_folder, log):
 
     model = lightning_tst_factory(tst_config, training_dl.dataset)
 
-    trainer = GenericPlTrainer(
-        logger=None,
+    checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
+
+    trainer = pl.Trainer(
+        max_epochs=10,
+        gradient_clip_val=4.0,
+        gradient_clip_algorithm="norm",
+        accelerator="gpu",
+        devices=config.gpus_available,
+        callbacks=[
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=15),
+            checkpoint_callback,
+        ],
+        enable_checkpointing=True,
         val_check_interval=0.005,
-        # log_every_n_steps=7,
-        enable_progress_bar=True,
+        logger=None,
     )  # TODO: add logger when things are actually working
 
     trainer.fit(

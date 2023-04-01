@@ -38,7 +38,7 @@ class GenericPlTst(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         X, y = batch
-        preds = self.tst(X)
+        preds = self.forward(X)
 
         loss = self.loss_fn(preds, y)
 
@@ -95,6 +95,7 @@ class GenericPlTst(pl.LightningModule):
         for s in self.scorers:
             final_score = s.compute()
 
+            # TODO: this part needs to go into the Regressor child class
             if s.__class__.__name__ == "RegressionCompetitionScore":
                 test_competition_score = final_score
                 # For the tuner

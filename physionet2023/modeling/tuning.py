@@ -2,37 +2,28 @@ import optuna
 import pytorch_lightning as pl
 import torch
 from mvtst.models import TSTConfig
-from optuna.integration.wandb import WeightsAndBiasesCallback
+
+# from optuna.integration.wandb import WeightsAndBiasesCallback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from sklearn.model_selection import KFold, train_test_split
 
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
-from physionet2023.modeling.convTST import (
+from physionet2023.modeling.rawWaveformTST import (
     dataloader_factory,
     lightning_tst_factory,
     single_dl_factory,
 )
 
-wandbc = WeightsAndBiasesCallback(
-    wandb_kwargs={
-        "project": "physionet2023wandb",
-        "group": "Optuna",
-        "job_type": "tune",
-    },
-    as_multirun=True,
-)
 
-
-@wandbc.track_in_wandb()
 def objective(trial: optuna.Trial) -> float:
     # Adjust based on GPU capabilities
     max_batch_size = 16
 
     # Parameters to tune:
-    trial.suggest_float("lr", 1e-10, 0.1, log=True)
-    trial.suggest_float("dropout", 0.01, 0.7)
+    trial.suggest_float("lr", 1e-7, 0.1, log=True)
+    trial.suggest_float("dropout", 0.4, 0.9)
     trial.suggest_categorical("d_model_multiplier", [1, 2, 4, 8, 16, 32, 64])
     trial.suggest_int("num_layers", 1, 15)
     trial.suggest_categorical("n_heads", [4, 8, 16, 32, 64])
@@ -77,10 +68,10 @@ def objective(trial: optuna.Trial) -> float:
         accelerator="gpu",
         devices=1,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=3),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=8),
             checkpoint_callback,
         ],
-        val_check_interval=0.1,
+        val_check_interval=0.01,
         enable_checkpointing=True,
         accumulate_grad_batches=accumulation_coeff,
         enable_progress_bar=False,
@@ -115,11 +106,10 @@ def objective(trial: optuna.Trial) -> float:
 
 
 if __name__ == "__main__":
-    torch.set_float32_matmul_precision("medium")
     pruner = None
     # pruner = optuna.pruners.PercentilePruner(25.0)
     study = optuna.create_study(direction="maximize", pruner=pruner)
-    study.optimize(objective, n_trials=100, callbacks=[wandbc])
+    study.optimize(objective, n_trials=100)
 
     print("Best trial:")
     trial = study.best_trial
