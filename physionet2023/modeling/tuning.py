@@ -5,7 +5,7 @@ from mvtst.models import TSTConfig
 from optuna.integration.wandb import WeightsAndBiasesCallback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
 
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
@@ -28,7 +28,7 @@ wandbc = WeightsAndBiasesCallback(
 @wandbc.track_in_wandb()
 def objective(trial: optuna.Trial) -> float:
     # Adjust based on GPU capabilities
-    max_batch_size = 8
+    max_batch_size = 16
 
     # Parameters to tune:
     trial.suggest_float("lr", 1e-10, 0.1, log=True)
@@ -57,73 +57,61 @@ def objective(trial: optuna.Trial) -> float:
     else:
         accumulation_coeff = 1
 
-    kf = KFold(n_splits=5)
     pds = PatientDataset()
 
-    all_fold_scores = list()
-    for fold_idx, (train_indices, valid_indices) in enumerate(
-        kf.split(pds.patient_ids)
-    ):
-        print(f"===== CV fold {fold_idx} =====")
+    train_pids, valid_pids = train_test_split(pds.patient_ids)
 
-        train_pids = [pds.patient_ids[idx] for idx in train_indices]
-        valid_pids = [pds.patient_ids[idx] for idx in valid_indices]
+    train_dl = single_dl_factory(tst_config, train_pids, pds.root_folder)
+    valid_dl = single_dl_factory(tst_config, valid_pids, pds.root_folder)
 
-        train_dl = single_dl_factory(tst_config, train_pids, pds.root_folder)
-        valid_dl = single_dl_factory(tst_config, valid_pids, pds.root_folder)
+    model = lightning_tst_factory(
+        tst_config,
+        train_dl.dataset,
+    )
 
-        model = lightning_tst_factory(
-            tst_config,
-            train_dl.dataset,
+    checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
+    trainer = pl.Trainer(
+        max_epochs=5,
+        gradient_clip_val=4.0,
+        gradient_clip_algorithm="norm",
+        accelerator="gpu",
+        devices=1,
+        callbacks=[
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=3),
+            checkpoint_callback,
+        ],
+        val_check_interval=0.1,
+        enable_checkpointing=True,
+        accumulate_grad_batches=accumulation_coeff,
+        enable_progress_bar=False,
+    )
+
+    try:
+        trainer.fit(
+            model=model,
+            train_dataloaders=train_dl,
+            val_dataloaders=valid_dl,
         )
+    except RuntimeError as e:
+        del trainer
+        del model
+        del train_dl
+        del valid_dl
+        torch.cuda.empty_cache()
 
-        checkpoint_callback = ModelCheckpoint(
-            save_top_k=1, monitor="val_loss", mode="min"
-        )
-        trainer = pl.Trainer(
-            max_epochs=100,
-            gradient_clip_val=4.0,
-            gradient_clip_algorithm="norm",
-            accelerator="gpu",
-            devices=1,
-            callbacks=[
-                EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=3),
-                checkpoint_callback,
-            ],
-            val_check_interval=0.1,
-            enable_checkpointing=True,
-            accumulate_grad_batches=accumulation_coeff,
-            enable_progress_bar=False,
-        )
+        if "PYTORCH_CUDA_ALLOC_CONF" in str(e):
+            print(f"[WARNING] OOM for trial with params {trial.params}")
+            return 0.0
+        else:
+            print(f"[WARNING] Trial failed with params: {trial.params}")
+            return 0.0
 
-        try:
-            trainer.fit(
-                model=model,
-                train_dataloaders=train_dl,
-                val_dataloaders=valid_dl,
-            )
-        except RuntimeError as e:
-            del trainer
-            del model
-            del train_dl
-            del valid_dl
-            torch.cuda.empty_cache()
+    best_state = torch.load(checkpoint_callback.best_model_path)["state_dict"]
+    model.load_state_dict(best_state)
 
-            if "PYTORCH_CUDA_ALLOC_CONF" in str(e):
-                print(f"[WARNING] OOM for trial with params {trial.params}")
-                return 0.0
-            else:
-                print(f"[WARNING] Trial failed with params: {trial.params}")
-                return 0.0
+    test_results = trainer.test(model=model, dataloaders=valid_dl)
 
-        best_state = torch.load(checkpoint_callback.best_model_path)["state_dict"]
-        model.load_state_dict(best_state)
-
-        test_results = trainer.test(model=model, dataloaders=valid_dl)
-        all_fold_scores.append(test_results[0]["Test CompetitionScore"])
-
-    print(f"CV finished, fold scores: {all_fold_scores}")
-    return sum(all_fold_scores) / len(all_fold_scores)
+    return test_results[0]["Test CompetitionScore"]
 
 
 if __name__ == "__main__":

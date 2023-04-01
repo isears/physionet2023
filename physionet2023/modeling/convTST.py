@@ -9,12 +9,7 @@ from sklearn.model_selection import train_test_split
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import GenericPlTrainer, GenericPlTst
-from physionet2023.modeling.scoringUtil import (
-    ClassifierAUROC,
-    CompetitionScore,
-    RegressorAUROC,
-)
+from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
 
 
 def lightning_tst_factory(tst_config: TSTConfig, ds):
@@ -24,7 +19,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
         feat_dim=ds.features_dim,
     )
 
-    lightning_wrapper = GenericPlTst(tst, tst_config)
+    lightning_wrapper = GenericPlRegressor(tst, tst_config)
 
     return lightning_wrapper
 
@@ -42,7 +37,7 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 8,
+        "batch_size": 16,
     }
 
     tst_config = TSTConfig(save_path="ConvTst", num_classes=1, **problem_params)
@@ -54,7 +49,7 @@ def single_dl_factory(
     tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
 ):
     ds = SpectrogramDataset(
-        root_folder=data_path, patient_ids=pids, for_classification=True, **ds_args
+        root_folder=data_path, patient_ids=pids, for_classification=False, **ds_args
     )
 
     dl = torch.utils.data.DataLoader(

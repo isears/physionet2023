@@ -95,8 +95,10 @@ class GenericPlTst(pl.LightningModule):
         for s in self.scorers:
             final_score = s.compute()
 
-            if s.__class__.__name__ == "CompetitionScore":
+            if s.__class__.__name__ == "RegressionCompetitionScore":
                 test_competition_score = final_score
+                # For the tuner
+                self.log(f"Test CompetitionScore", test_competition_score)
 
             self.log(f"Test {s.__class__.__name__}", final_score)
 
