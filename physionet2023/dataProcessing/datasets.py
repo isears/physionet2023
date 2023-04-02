@@ -382,8 +382,12 @@ class SampleDataset(RecordingDataset):
 
 
 class FftDataset(SampleDataset):
-    def __init__(self, patient_ids: list, **super_kwargs):
-        super().__init__(patient_ids=patient_ids, **super_kwargs)
+    def __init__(self, patient_ids: list, for_testing=False, **super_kwargs):
+        super().__init__(
+            patient_ids=patient_ids, for_testing=for_testing, **super_kwargs
+        )
+
+        self.for_testing = for_testing
 
         if self.resample_factor:
             raise NotImplementedError("FFT automatically downsamples to sample_len")
@@ -416,7 +420,9 @@ class FftDataset(SampleDataset):
 
         label = float(patient_metadata["CPC"])
 
-        if self.for_classification:
+        if self.for_testing:
+            label = torch.tensor(float("nan"))
+        elif self.for_classification:
             label = torch.tensor(float(label > 2))
         else:
             label = torch.tensor(label)

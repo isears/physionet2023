@@ -17,13 +17,17 @@ import numpy as np
 import torch
 
 from helper_code import *
+from physionet2023 import config
 from physionet2023.modeling.rawWaveformTST import (
     config_factory,
     lightning_tst_factory,
     single_dl_factory,
     train_fn,
 )
-from physionet2023.modeling.scoringUtil import regression_to_probability
+from physionet2023.modeling.scoringUtil import (
+    regression_to_probability,
+    regression_to_probability_smooth,
+)
 
 ################################################################################
 #
@@ -61,20 +65,26 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
     model = model.eval()
 
+    if config.gpus_available > 0:
+        model.to("cuda")
+
     with torch.no_grad():
         preds = list()
 
         for X, _ in dl:
+            if config.gpus_available > 0:
+                X = X.to("cuda")
+
             preds.append(model(X))
 
-    avg_pred = torch.concat(preds).mean()
+    avg_pred = torch.concat(preds).mean().cpu()
 
-    outcome_probability = regression_to_probability(avg_pred)
+    outcome_probability = regression_to_probability_smooth(avg_pred)
 
     predicted_CPC = int(avg_pred.round())
     outcome_binary = int(outcome_probability.round())
 
-    return outcome_binary, outcome_probability, predicted_CPC
+    return outcome_binary, float(outcome_probability), predicted_CPC
 
 
 ################################################################################
