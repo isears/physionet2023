@@ -209,7 +209,7 @@ class PatientTrainingDataset(PatientDataset):
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, pids: list, shuffle=True, for_testing=False, **super_kwargs):
+    def __init__(self, shuffle=True, for_testing=False, **super_kwargs):
         super().__init__(**super_kwargs)
 
         self.shuffle = shuffle
@@ -219,13 +219,10 @@ class RecordingDataset(PatientDataset):
         self.patient_recording_index = list()
 
         for pid in self.patient_ids:
-            if pid in pids:
-                recording_metadata = self._load_recording_metadata(pid)
+            recording_metadata = self._load_recording_metadata(pid)
 
-                for recording_id in recording_metadata["Record"].to_list():
-                    self.patient_recording_index.append((pid, recording_id))
-
-        self.patient_ids = pids
+            for recording_id in recording_metadata["Record"].to_list():
+                self.patient_recording_index.append((pid, recording_id))
 
         if self.shuffle:
             random.shuffle(self.patient_recording_index)
@@ -308,14 +305,13 @@ class FftDownsamplingDataset(RecordingDataset):
 class SampleDataset(RecordingDataset):
     def __init__(
         self,
-        patient_ids: list,
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
         for_classification=True,
         **super_kwargs,
     ):
-        super().__init__(patient_ids, include_static=False, **super_kwargs)
+        super().__init__(include_static=False, **super_kwargs)
         self.for_classification = for_classification
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()

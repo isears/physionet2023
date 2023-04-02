@@ -20,6 +20,7 @@ from physionet2023.modeling.rawWaveformTST import (
 
 
 def objective(trial: optuna.Trial) -> float:
+    # wandb.init(reinit=True, settings=wandb.Settings(start_method="fork"))
     # Adjust based on GPU capabilities
     max_batch_size = 16
 
@@ -51,24 +52,19 @@ def objective(trial: optuna.Trial) -> float:
     else:
         accumulation_coeff = 1
 
-    pds = PatientDataset()
-
-    train_pids, valid_pids = train_test_split(pds.patient_ids)
-
-    train_dl = single_dl_factory(tst_config, train_pids, pds.root_folder)
-    valid_dl = single_dl_factory(tst_config, valid_pids, pds.root_folder)
+    train_dl, valid_dl = dataloader_factory(tst_config, deterministic_split=False)
 
     model = lightning_tst_factory(
         tst_config,
         train_dl.dataset,
     )
 
-    logger = WandbLogger(
-        project="physionet2023wandb",
-        config=tst_config,
-        group="FftTstTuner",
-        job_type="train",
-    )
+    # logger = WandbLogger(
+    #     project="physionet2023wandb",
+    #     config=tst_config,
+    #     group="FftTstTuner",
+    #     job_type="train",
+    # )
 
     checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
     trainer = pl.Trainer(
@@ -78,14 +74,14 @@ def objective(trial: optuna.Trial) -> float:
         accelerator="gpu",
         devices=1,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=8),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=5),
             checkpoint_callback,
         ],
         val_check_interval=0.01,
         enable_checkpointing=True,
         accumulate_grad_batches=accumulation_coeff,
         enable_progress_bar=False,
-        logger=logger,
+        logger=None,
     )
 
     try:
@@ -95,16 +91,13 @@ def objective(trial: optuna.Trial) -> float:
             val_dataloaders=valid_dl,
         )
 
-        wandb.finish()
-
     except RuntimeError as e:
         del trainer
         del model
         del train_dl
         del valid_dl
         torch.cuda.empty_cache()
-
-        wandb.finish()
+        # logger.experiment.finish()
 
         if "PYTORCH_CUDA_ALLOC_CONF" in str(e):
             print(f"[WARNING] OOM for trial with params {trial.params}")
@@ -113,6 +106,7 @@ def objective(trial: optuna.Trial) -> float:
             print(f"[WARNING] Trial failed with params: {trial.params}")
             return 0.0
 
+    # logger.experiment.finish()
     best_state = torch.load(checkpoint_callback.best_model_path)["state_dict"]
     model.load_state_dict(best_state)
 

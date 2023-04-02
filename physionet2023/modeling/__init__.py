@@ -157,7 +157,7 @@ class GenericPlTrainer(pl.Trainer):
             enable_checkpointing=True,
             enable_progress_bar=enable_progress_bar,
             # For when doing sample-based datasets
-            # val_check_interval=0.1,
+            val_check_interval=0.1,
             # log_every_n_steps=7,
             logger=logger,
             **extra_args,

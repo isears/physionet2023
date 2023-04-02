@@ -69,12 +69,15 @@ def dataloader_factory(
     pids = PatientDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
-        train_pids, valid_pids = train_test_split(pids, random_state=42)
+        train_pids, valid_pids = train_test_split(pids, random_state=42, test_size=0.1)
     else:
-        train_pids, valid_pids = train_test_split(pids)
+        train_pids, valid_pids = train_test_split(pids, test_size=0.1)
 
     train_dl = single_dl_factory(tst_config, train_pids, data_path)
     valid_dl = single_dl_factory(tst_config, valid_pids, data_path)
+
+    for pid in train_dl.dataset.patient_ids:
+        assert pid not in valid_dl.dataset.patient_ids
 
     return train_dl, valid_dl
 
@@ -99,7 +102,7 @@ def train_fn(data_path: str, log: bool = True):
     else:
         logger = None
 
-    trainer = GenericPlTrainer(logger)
+    trainer = GenericPlTrainer(logger, enable_progress_bar=True)
 
     trainer.fit(
         model=model,
