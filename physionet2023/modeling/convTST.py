@@ -37,7 +37,7 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 16,
+        "batch_size": 8,
     }
 
     tst_config = TSTConfig(save_path="ConvTst", num_classes=1, **problem_params)
@@ -49,7 +49,11 @@ def single_dl_factory(
     tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
 ):
     ds = SpectrogramDataset(
-        root_folder=data_path, patient_ids=pids, for_classification=False, **ds_args
+        root_folder=data_path,
+        patient_ids=pids,
+        for_classification=False,
+        normalize=True,
+        **ds_args,
     )
 
     dl = torch.utils.data.DataLoader(

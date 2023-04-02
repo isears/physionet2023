@@ -115,10 +115,14 @@ def regression_to_probability_smooth(regression_pred, clip=True):
 
 
 class RegressionAUROC(BinaryAUROC):
-    def __init__(self) -> None:
+    def __init__(self, from_normalized=True) -> None:
         super().__init__()
+        self.from_normalized = from_normalized
 
     def update(self, preds, target):
+        if self.from_normalized:
+            preds = (preds * 4) + 1
+            target = (target * 4) + 1
         probability_outputs = regression_to_probability_smooth(preds)
         binary_labels = (target > 2).float()
 
@@ -173,7 +177,15 @@ class CompetitionScore(Metric):
 
 
 class RegressionCompetitionScore(CompetitionScore):
+    def __init__(self, from_normalized=True) -> None:
+        super().__init__()
+        self.from_normalized = from_normalized
+
     def update(self, preds, target):
+        if self.from_normalized:
+            preds = (preds * 4) + 1
+            target = (target * 4) + 1
+
         probability_outputs = regression_to_probability_smooth(preds)
         binary_labels = (target > 2).float()
         return super().update(probability_outputs, binary_labels)
