@@ -92,6 +92,7 @@ class GenericPlTst(pl.LightningModule):
         return loss
 
     def on_test_epoch_end(self):
+        test_competition_score = 0.0
         for s in self.scorers:
             final_score = s.compute()
 

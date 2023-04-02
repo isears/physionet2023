@@ -2,7 +2,8 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
-from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDataset
+from physionet2023.dataProcessing.datasets import (PatientDataset,
+                                                   RecordingDataset)
 
 
 class SpectrogramDataset(RecordingDataset):
@@ -66,9 +67,26 @@ class SpectrogramDataset(RecordingDataset):
                 return torch.tensor(X), label.unsqueeze(-1)
 
 
+class SpectrogramAgeDataset(SpectrogramDataset):
+    MAX_AGE = 90.0  # Specified in competition data description: "all ages above 89 were aggregated into a single category and encoded as “90”"
+
+    def __getitem__(self, index: int):
+        patient_id, recording_id = self.patient_recording_index[index]
+        patient_metadata = self._load_patient_metadata(patient_id)
+
+        age = patient_metadata["Age"]
+
+        if self.normalize:
+            y = torch.tensor(float(age) / self.MAX_AGE).unsqueeze(-1)
+
+        X, _ = super().__getitem__(index)
+
+        return X, y
+
+
 if __name__ == "__main__":
     pds = PatientDataset()
-    ds = SpectrogramDataset(pds.patient_ids)
+    ds = SpectrogramAgeDataset(pds.patient_ids)
 
     shape = None
 

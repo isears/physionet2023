@@ -2,16 +2,18 @@ import pytorch_lightning as pl
 import torch
 from mvtst.models import TSTConfig
 from mvtst.models.loss import NoFussCrossEntropyLoss
-from mvtst.models.ts_transformer import (ConvTST,
-                                         TSTransformerEncoderClassiregressor)
+from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregressor
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
+from torchmetrics import MeanAbsoluteError, MeanSquaredError
 
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
-from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import (GenericPlRegressor, GenericPlTrainer,
-                                    GenericPlTst)
+from physionet2023.dataProcessing.recordingDatasets import (
+    SpectrogramAgeDataset,
+    SpectrogramDataset,
+)
+from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
 
 
 def lightning_tst_factory(tst_config: TSTConfig, ds):
@@ -23,13 +25,18 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 
     lightning_wrapper = GenericPlRegressor(tst, tst_config)
 
+    lightning_wrapper.scorers = [
+        MeanAbsoluteError().to("cuda"),
+        MeanSquaredError().to("cuda"),
+    ]
+
     return lightning_wrapper
 
 
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 1e-4,
+        "lr": 1e-3,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 1,
@@ -102,7 +109,7 @@ def train_fn(data_path: str = "./data", log: bool = True):
         logger = WandbLogger(
             project="physionet2023wandb",
             config=tst_config,
-            group="ConvTST_classifier",
+            group="ConvTST_age_regressor",
             job_type="train",
         )
     else:
@@ -120,4 +127,5 @@ def train_fn(data_path: str = "./data", log: bool = True):
 
 
 if __name__ == "__main__":
-    train_fn(data_path="./data", log=True)
+    params = train_fn(data_path="./data", log=False)
+    torch.save(params, "./cache/age_models/convTST.pt")
