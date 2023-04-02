@@ -218,14 +218,31 @@ class RecordingDataset(PatientDataset):
         # Generate an index of tuples (patient_id, recording_id)
         self.patient_recording_index = list()
 
-        for pid in self.patient_ids:
-            recording_metadata = self._load_recording_metadata(pid)
-
-            for recording_id in recording_metadata["Record"].to_list():
-                self.patient_recording_index.append((pid, recording_id))
-
         if self.shuffle:
-            random.shuffle(self.patient_recording_index)
+            self.patient_ids = random.sample(self.patient_ids, len(self.patient_ids))
+            recordings_dict = {
+                pid: sorted(
+                    self._load_recording_metadata(pid)["Record"].to_list(),
+                    key=lambda k: random.random(),
+                )
+                for pid in self.patient_ids
+            }
+        else:
+            recordings_dict = {
+                pid: self._load_recording_metadata(pid)["Record"].to_list()
+                for pid in self.patient_ids
+            }
+
+        while len(recordings_dict) > 0:
+            this_iter_patient_ids = list(recordings_dict.copy().keys())
+
+            for patient_id in this_iter_patient_ids:
+                self.patient_recording_index.append(
+                    (patient_id, recordings_dict[patient_id].pop())
+                )
+
+                if len(recordings_dict[patient_id]) == 0:
+                    del recordings_dict[patient_id]
 
     def collate(self, batch):
         X = torch.stack([recording_data for recording_data, _, _ in batch], dim=0)
