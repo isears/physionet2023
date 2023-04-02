@@ -8,7 +8,6 @@ from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDatas
 class SpectrogramDataset(RecordingDataset):
     def __init__(
         self,
-        patient_ids: list,
         shuffle=True,
         for_classification=False,
         f_min=0.5,
@@ -16,7 +15,6 @@ class SpectrogramDataset(RecordingDataset):
         **super_kwargs,
     ):
         super().__init__(
-            patient_ids,
             shuffle,
             include_static=False,
             **super_kwargs,

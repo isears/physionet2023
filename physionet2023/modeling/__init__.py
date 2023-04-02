@@ -126,7 +126,14 @@ class GenericPlRegressor(GenericPlTst):
 
 
 class GenericPlTrainer(pl.Trainer):
-    def __init__(self, logger=None, enable_progress_bar=False, **extra_args):
+    def __init__(
+        self,
+        logger=None,
+        enable_progress_bar=False,
+        val_check_interval=0.1,
+        es_patience=7,
+        **extra_args,
+    ):
         self.my_checkpoint_callback = ModelCheckpoint(
             save_top_k=1, monitor="val_loss", mode="min"
         )
@@ -149,7 +156,7 @@ class GenericPlTrainer(pl.Trainer):
                     monitor="val_loss",
                     mode="min",
                     verbose=True,
-                    patience=3,
+                    patience=es_patience,
                     check_finite=False,
                 ),
                 self.my_checkpoint_callback,
@@ -157,7 +164,7 @@ class GenericPlTrainer(pl.Trainer):
             enable_checkpointing=True,
             enable_progress_bar=enable_progress_bar,
             # For when doing sample-based datasets
-            val_check_interval=0.1,
+            val_check_interval=val_check_interval,
             # log_every_n_steps=7,
             logger=logger,
             **extra_args,
