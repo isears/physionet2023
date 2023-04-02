@@ -12,7 +12,7 @@ from sklearn.model_selection import KFold, train_test_split
 import wandb
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
-from physionet2023.modeling.rawWaveformTST import (
+from physionet2023.modeling.convTST import (
     dataloader_factory,
     lightning_tst_factory,
     single_dl_factory,
@@ -31,7 +31,7 @@ def objective(trial: optuna.Trial) -> float:
     trial.suggest_int("num_layers", 1, 15)
     trial.suggest_categorical("n_heads", [4, 8, 16, 32, 64])
     trial.suggest_int("dim_feedforward", 64, 1024)
-    trial.suggest_int("batch_size", max_batch_size, 512, max_batch_size)
+    trial.suggest_categorical("batch_size", [4, 8, 16, 32, 64, 128, 512, 1024])
     trial.suggest_categorical("pos_encoding", ["fixed", "learnable"])
     trial.suggest_categorical("activation", ["gelu", "relu"])
     trial.suggest_categorical("norm", ["BatchNorm", "LayerNorm"])
@@ -52,7 +52,9 @@ def objective(trial: optuna.Trial) -> float:
     else:
         accumulation_coeff = 1
 
-    train_dl, valid_dl = dataloader_factory(tst_config, deterministic_split=False)
+    train_dl, valid_dl = dataloader_factory(
+        tst_config, deterministic_split=False, data_path="./data"
+    )
 
     model = lightning_tst_factory(
         tst_config,
@@ -74,14 +76,14 @@ def objective(trial: optuna.Trial) -> float:
         accelerator="gpu",
         devices=1,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=5),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=7),
             checkpoint_callback,
         ],
-        val_check_interval=0.01,
+        val_check_interval=0.1,
         enable_checkpointing=True,
         accumulate_grad_batches=accumulation_coeff,
         enable_progress_bar=False,
-        logger=None,
+        logger=False,
     )
 
     try:
