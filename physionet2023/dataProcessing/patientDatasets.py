@@ -55,6 +55,20 @@ class AvgFFTDataset(PatientDataset):
         )
 
 
+class MetadataOnlyDataset(PatientDataset):
+    """
+    Save loading recordings if all we're interested in is the metadata (e.g. for stratified test/train split)
+    """
+
+    def __getitem__(self, index: int):
+        patient_id = self.patient_ids[index]
+
+        patient_metadata = self._load_patient_metadata(patient_id)
+        recording_metadata = self._load_recording_metadata(patient_id)
+
+        return patient_id, patient_metadata, recording_metadata
+
+
 if __name__ == "__main__":
     ds = AvgFFTDataset()
 
