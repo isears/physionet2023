@@ -114,6 +114,21 @@ def regression_to_probability_smooth(regression_pred, clip=True):
     return outcome_probability
 
 
+def regression_to_probability_smooth_confident(regression_pred, clip=True):
+    if clip:
+        regression_pred = torch.clip(regression_pred, 1.0, 5.0)
+
+    # y = -2/9 * (x - 2.5)^2 + 0.5; (x < 2.5)
+    # y = 2/25 * (x - 2.5)^2 + 0.5; (x >= 2.5)
+    outcome_probability = torch.where(
+        regression_pred < 2.5,
+        ((2 / 9) * ((regression_pred - 1) ** 2)),
+        ((-2 / 25) * ((regression_pred - 5) ** 2) + 1),
+    )
+
+    return outcome_probability
+
+
 class RegressionAUROC(BinaryAUROC):
     def __init__(self, from_normalized=True) -> None:
         super().__init__()
@@ -123,7 +138,7 @@ class RegressionAUROC(BinaryAUROC):
         if self.from_normalized:
             preds = (preds * 4) + 1
             target = (target * 4) + 1
-        probability_outputs = regression_to_probability_smooth(preds)
+        probability_outputs = regression_to_probability(preds)
         binary_labels = (target > 2).float()
 
         return super().update(probability_outputs, binary_labels)
@@ -186,7 +201,7 @@ class RegressionCompetitionScore(CompetitionScore):
             preds = (preds * 4) + 1
             target = (target * 4) + 1
 
-        probability_outputs = regression_to_probability_smooth(preds)
+        probability_outputs = regression_to_probability(preds)
         binary_labels = (target > 2).float()
         return super().update(probability_outputs, binary_labels)
 

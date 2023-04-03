@@ -2,16 +2,14 @@ import pytorch_lightning as pl
 import torch
 from mvtst.models import TSTConfig
 from mvtst.models.loss import NoFussCrossEntropyLoss
-from mvtst.models.ts_transformer import (ConvTST,
-                                         TSTransformerEncoderClassiregressor)
+from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregressor
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import config
-from physionet2023.dataProcessing.datasets import PatientDataset
+from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import (GenericPlRegressor, GenericPlTrainer,
-                                    GenericPlTst)
+from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
 
 
 def lightning_tst_factory(tst_config: TSTConfig, ds):
@@ -70,14 +68,19 @@ def single_dl_factory(
 
 
 def dataloader_factory(
-    tst_config: TSTConfig, data_path: str = "./data", deterministic_split=False
+    tst_config: TSTConfig,
+    data_path: str = "./data",
+    deterministic_split=False,
+    test_size=0.1,
 ):
-    pids = PatientDataset(root_folder=data_path).patient_ids
+    pids = MetadataOnlyDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
-        train_pids, valid_pids = train_test_split(pids, random_state=42, test_size=0.1)
+        train_pids, valid_pids = train_test_split(
+            pids, random_state=42, test_size=test_size
+        )
     else:
-        train_pids, valid_pids = train_test_split(pids, test_size=0.1)
+        train_pids, valid_pids = train_test_split(pids, test_size=test_size)
 
     train_dl = single_dl_factory(tst_config, train_pids, data_path)
     valid_dl = single_dl_factory(tst_config, valid_pids, data_path)
@@ -88,7 +91,7 @@ def dataloader_factory(
     return train_dl, valid_dl
 
 
-def train_fn(data_path: str = "./data", log: bool = True):
+def train_fn(data_path: str = "./data", log: bool = True, test=False):
     # torch.set_float32_matmul_precision("medium")
     tst_config = config_factory()
 
@@ -108,7 +111,9 @@ def train_fn(data_path: str = "./data", log: bool = True):
     else:
         logger = None
 
-    trainer = GenericPlTrainer(logger, enable_progress_bar=True)
+    trainer = GenericPlTrainer(
+        "./cache/convTST", logger, enable_progress_bar=True, es_patience=7
+    )
 
     trainer.fit(
         model=model,
@@ -116,8 +121,12 @@ def train_fn(data_path: str = "./data", log: bool = True):
         val_dataloaders=valid_dl,
     )
 
+    model.load_state_dict(trainer.get_best_params())
+
+    trainer.test(model=model, dataloaders=valid_dl)
+
     return trainer.get_best_params()
 
 
 if __name__ == "__main__":
-    train_fn(data_path="./data", log=True)
+    train_fn(data_path="./data", log=False, test=True)

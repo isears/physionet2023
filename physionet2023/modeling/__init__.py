@@ -3,15 +3,14 @@ import torch
 from mvtst.models import TSTConfig
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryPrecision
+from torchmetrics.classification import (BinaryAccuracy, BinaryAUROC,
+                                         BinaryPrecision)
 
 from physionet2023 import config
-from physionet2023.modeling.scoringUtil import (
-    CompetitionScore,
-    PrintableBinaryConfusionMatrix,
-    RegressionAUROC,
-    RegressionCompetitionScore,
-)
+from physionet2023.modeling.scoringUtil import (CompetitionScore,
+                                                PrintableBinaryConfusionMatrix,
+                                                RegressionAUROC,
+                                                RegressionCompetitionScore)
 
 
 class GenericPlTst(pl.LightningModule):
@@ -129,6 +128,7 @@ class GenericPlRegressor(GenericPlTst):
 class GenericPlTrainer(pl.Trainer):
     def __init__(
         self,
+        save_path:str,
         logger=None,
         enable_progress_bar=False,
         val_check_interval=0.1,
@@ -136,7 +136,7 @@ class GenericPlTrainer(pl.Trainer):
         **extra_args,
     ):
         self.my_checkpoint_callback = ModelCheckpoint(
-            save_top_k=1, monitor="val_loss", mode="min"
+            save_top_k=1, monitor="val_loss", mode="min", dirpath=save_path
         )
 
         if config.gpus_available > 0:

@@ -53,7 +53,7 @@ def objective(trial: optuna.Trial) -> float:
         accumulation_coeff = 1
 
     train_dl, valid_dl = dataloader_factory(
-        tst_config, deterministic_split=False, data_path="./data"
+        tst_config, deterministic_split=True, data_path="./data", test_size=0.25
     )
 
     model = lightning_tst_factory(
@@ -68,7 +68,9 @@ def objective(trial: optuna.Trial) -> float:
     #     job_type="train",
     # )
 
-    checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=1, monitor="val_loss", mode="min", dirpath="cache/tuning_models"
+    )
     trainer = pl.Trainer(
         max_epochs=5,
         gradient_clip_val=4.0,
@@ -121,7 +123,7 @@ if __name__ == "__main__":
     pruner = None
     # pruner = optuna.pruners.PercentilePruner(25.0)
     study = optuna.create_study(direction="maximize", pruner=pruner)
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, timeout=(96.0 * 60.0 * 60.0))
 
     print("Best trial:")
     trial = study.best_trial
