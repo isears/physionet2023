@@ -77,7 +77,11 @@ def single_dl_factory(
     tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
 ):
     ds = SpectrogramDataset(
-        root_folder=data_path, patient_ids=pids, for_classification=False, **ds_args
+        root_folder=data_path,
+        patient_ids=pids,
+        for_classification=False,
+        normalize=True,
+        **ds_args
     )
 
     dl = torch.utils.data.DataLoader(
@@ -97,7 +101,7 @@ def dataloader_factory(
     pids = PatientDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
-        train_pids, valid_pids = train_test_split(pids, random_state=42)
+        train_pids, valid_pids = train_test_split(pids, random_state=1, test_size=0.1)
     else:
         train_pids, valid_pids = train_test_split(pids)
 
@@ -127,7 +131,9 @@ def train_fn(data_path: str, log: bool = True):
     # else:
     #     logger = None
 
-    trainer = GenericPlTrainer(enable_progress_bar=True, val_check_interval=0.1)
+    trainer = GenericPlTrainer(
+        save_path="cache/simpleCNN", enable_progress_bar=True, val_check_interval=0.1
+    )
 
     trainer.fit(
         model=model,

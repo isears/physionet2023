@@ -1,7 +1,10 @@
+import random
+
 import numpy as np
 import pytorch_lightning as pl
 import torch
 from sklearn.metrics import roc_auc_score
+from tqdm import tqdm
 
 from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
@@ -16,20 +19,21 @@ from physionet2023.modeling.scoringUtil import (
 )
 
 if __name__ == "__main__":
+    random.seed(42)
     metadata_ds = MetadataOnlyDataset()
 
     labels = list()
     preds = list()
 
-    patient_ids = metadata_ds.patient_ids[0:3]  # TODO: debug only
+    all_patient_ids = metadata_ds.patient_ids
+    loo_sample_patient_ids = random.sample(all_patient_ids, 100)
 
-    for pid in patient_ids:
-        left_out = pid
-        training_pids = [p for p in metadata_ds.patient_ids if p != left_out]
+    for loo_pid in tqdm(loo_sample_patient_ids):
+        training_pids = [p for p in all_patient_ids if p != loo_pid]
 
         tst_config = config_factory()
         train_dl = single_dl_factory(tst_config, training_pids)
-        valid_dl = single_dl_factory(tst_config, [left_out])
+        valid_dl = single_dl_factory(tst_config, [loo_pid])
         model = lightning_tst_factory(tst_config, train_dl.dataset)
 
         trainer = pl.Trainer(
@@ -38,7 +42,7 @@ if __name__ == "__main__":
             gradient_clip_algorithm="norm",
             accelerator="gpu",
             enable_checkpointing=False,
-            enable_progress_bar=True,
+            enable_progress_bar=False,
             logger=False,
         )
 
@@ -47,24 +51,27 @@ if __name__ == "__main__":
             train_dataloaders=train_dl,
         )
 
-        test_ds = SpectrogramDataset(
-            root_folder="./data",
-            patient_ids=[left_out],
-            for_classification=False,
-            normalize=True,
-        )
-
         model.eval()
+
+        this_patient_preds = list()
+        this_patient_labels = list()
 
         for X, y in valid_dl:
             with torch.no_grad():
-                preds.append(model(X).cpu())
-                labels.append(y.cpu())
+                this_patient_preds.append(model(X).cpu())
+                this_patient_labels.append(y.cpu())
 
-    preds = (torch.cat(preds).cpu().numpy() * 4) + 1
-    target = (torch.cat(labels).cpu().numpy() * 4) + 1
+        preds.append(torch.cat(this_patient_preds).mean())
+        labels.append(torch.cat(this_patient_labels).mean())
 
-    preds_prob = regression_to_probability(preds)
+    preds = (torch.cat(preds) * 4) + 1
+    target = (torch.cat(labels) * 4) + 1
 
-    print(compute_challenge_score(target, preds_prob))
-    print(roc_auc_score(target, preds_prob))
+    torch.save(preds, "cache/loo/preds.pt")
+    torch.save(target, "cache/loo/target.pt")
+
+    preds = regression_to_probability(preds).cpu().numpy()
+    target = regression_to_probability(target).cpu().numpy()
+
+    print(compute_challenge_score(target, preds))
+    print(roc_auc_score(target, preds))
