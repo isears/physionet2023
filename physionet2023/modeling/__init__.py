@@ -3,14 +3,15 @@ import torch
 from mvtst.models import TSTConfig
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
-from torchmetrics.classification import (BinaryAccuracy, BinaryAUROC,
-                                         BinaryPrecision)
+from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryPrecision
 
 from physionet2023 import config
-from physionet2023.modeling.scoringUtil import (CompetitionScore,
-                                                PrintableBinaryConfusionMatrix,
-                                                RegressionAUROC,
-                                                RegressionCompetitionScore)
+from physionet2023.modeling.scoringUtil import (
+    CompetitionScore,
+    PrintableBinaryConfusionMatrix,
+    RegressionAUROC,
+    RegressionCompetitionScore,
+)
 
 
 class GenericPlTst(pl.LightningModule):
@@ -113,6 +114,19 @@ class GenericPlTst(pl.LightningModule):
         return self.tst_config.generate_optimizer(self.parameters())
 
 
+class WeightedMSELoss(torch.nn.MSELoss):
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        de_normed = (target * 4) + 1
+        weights = torch.ones_like(de_normed)
+        weights = weights.where(de_normed == 2.0, torch.tensor(1.5).cuda())
+        weights = weights.where(de_normed == 3.0, torch.tensor(1.5).cuda())
+        weights = weights.where(de_normed == 4.0, torch.tensor(1.5).cuda())
+
+        raw_loss = torch.nn.functional.mse_loss(input, target)
+
+        return (raw_loss * weights).mean()
+
+
 class GenericPlRegressor(GenericPlTst):
     def __init__(self, tst, tst_config: TSTConfig) -> None:
         super().__init__(tst, tst_config)
@@ -120,6 +134,7 @@ class GenericPlRegressor(GenericPlTst):
         self.scorers = [RegressionAUROC(), RegressionCompetitionScore()]
 
         self.loss_fn = torch.nn.MSELoss()
+        # self.loss_fn = WeightedMSELoss()
 
     def forward(self, X):
         return self.tst(X)
@@ -128,7 +143,7 @@ class GenericPlRegressor(GenericPlTst):
 class GenericPlTrainer(pl.Trainer):
     def __init__(
         self,
-        save_path:str,
+        save_path: str,
         logger=None,
         enable_progress_bar=False,
         val_check_interval=0.1,

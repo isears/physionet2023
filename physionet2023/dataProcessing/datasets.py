@@ -413,9 +413,6 @@ class FftDataset(SampleDataset):
         patient_metadata = self._load_patient_metadata(patient_id)
         recording_data = self._load_single_recording(patient_id, recording_id)
 
-        if self.normalize:
-            raise NotImplementedError("Normalize not implemented for fft (yet)")
-
         sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
         X_fft = np.zeros_like(sample_data)
         for channel_idx in range(0, sample_data.shape[0]):
@@ -437,6 +434,8 @@ class FftDataset(SampleDataset):
             label = torch.tensor(float("nan"))
         elif self.for_classification:
             label = torch.tensor(float(label > 2))
+        elif self.normalize:
+            label = torch.tensor((label - 1.0) / 4.0)
         else:
             label = torch.tensor(label)
 

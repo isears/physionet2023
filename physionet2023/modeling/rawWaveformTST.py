@@ -69,7 +69,7 @@ def single_dl_factory(
         root_folder=data_path,
         patient_ids=pids,
         for_classification=False,
-        normalize=False,
+        normalize=True,
         sample_len=1000,
         **ds_args,
     )
