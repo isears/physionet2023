@@ -26,10 +26,13 @@ if __name__ == "__main__":
     preds = list()
 
     all_patient_ids = metadata_ds.patient_ids
-    loo_sample_patient_ids = random.sample(all_patient_ids, 100)
+    # loo_sample_patient_ids = random.sample(all_patient_ids, 3)
+    loo_sample_patient_ids = all_patient_ids
 
     for loo_pid in tqdm(loo_sample_patient_ids):
         training_pids = [p for p in all_patient_ids if p != loo_pid]
+
+        assert loo_pid not in training_pids
 
         tst_config = config_factory()
         train_dl = single_dl_factory(tst_config, training_pids)
@@ -64,14 +67,14 @@ if __name__ == "__main__":
         preds.append(torch.cat(this_patient_preds).mean())
         labels.append(torch.cat(this_patient_labels).mean())
 
-    preds = (torch.cat(preds) * 4) + 1
-    target = (torch.cat(labels) * 4) + 1
+    preds = (torch.stack(preds) * 4) + 1
+    target = (torch.stack(labels) * 4) + 1
 
     torch.save(preds, "cache/loo/preds.pt")
     torch.save(target, "cache/loo/target.pt")
 
     preds = regression_to_probability(preds).cpu().numpy()
-    target = regression_to_probability(target).cpu().numpy()
+    target = (target > 2).int().cpu().numpy()
 
     print(compute_challenge_score(target, preds))
     print(roc_auc_score(target, preds))
