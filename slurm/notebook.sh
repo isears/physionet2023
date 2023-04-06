@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH -n 1
-#SBATCH -p debug
+#SBATCH -p batch
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
-#SBATCH --time=1:00:00
+#SBATCH --time=2:00:00
 #SBATCH --output ./logs/notebook.log
 
 
