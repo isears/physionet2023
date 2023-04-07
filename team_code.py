@@ -77,9 +77,12 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
             preds.append(model(X))
 
-    avg_pred = torch.concat(preds).mean().cpu()
+    try:
+        avg_pred = torch.concat(preds).median().cpu()
+    except RuntimeError:
+        avg_pred = 1.0
 
-    outcome_probability = regression_to_probability_smooth(avg_pred)
+    outcome_probability = regression_to_probability(avg_pred)
 
     predicted_CPC = int(avg_pred.round())
     outcome_binary = int(outcome_probability.round())
