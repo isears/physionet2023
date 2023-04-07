@@ -148,6 +148,9 @@ class PatientDataset(torch.utils.data.Dataset):
 
         return patient_metadata, recording_metadata, recordings
 
+    def get_by_patient_id(self, pid: str):
+        return self.__getitem__(self.patient_ids.index(pid))
+
 
 class PatientTrainingDataset(PatientDataset):
     def __init__(self, root_folder: str, sample_len: int, normalize=True, **kwargs):
