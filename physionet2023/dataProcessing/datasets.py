@@ -408,18 +408,6 @@ class FftDataset(SampleDataset):
         for channel_idx in range(0, sample_data.shape[0]):
             X_fft[channel_idx, :] = np.abs(np.fft.fft(sample_data[channel_idx, :]))
 
-        # fft_resample_factor = self.sample_len / self.full_record_len
-        # X_fft_downsampled = decimate(X_fft, fft_resample_factor)
-
-        static_data = torch.tensor(
-            [
-                converter(patient_metadata[f])
-                for f, converter in self.static_features.items()
-            ]
-        )
-
-        label = float(patient_metadata["CPC"])
-
         if self.for_testing:
             label = torch.tensor(float("nan"))
         elif self.for_classification:
