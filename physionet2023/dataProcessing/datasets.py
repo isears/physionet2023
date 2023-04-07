@@ -408,12 +408,27 @@ class FftDataset(SampleDataset):
         for channel_idx in range(0, sample_data.shape[0]):
             X_fft[channel_idx, :] = np.abs(np.fft.fft(sample_data[channel_idx, :]))
 
+        # fft_resample_factor = self.sample_len / self.full_record_len
+        # X_fft_downsampled = decimate(X_fft, fft_resample_factor)
+
+        static_data = torch.tensor(
+            [
+                converter(patient_metadata[f])
+                for f, converter in self.static_features.items()
+            ]
+        )
+
+        if "CPC" in patient_metadata:
+            label = float(patient_metadata["CPC"])
+        else:
+            label = float('nan')
+
         if self.for_testing:
             label = torch.tensor(float("nan"))
         elif self.for_classification:
-            label = torch.tensor(float(label > 2))
+            label = torch.tensor(float(float(patient_metadata["CPC"]) > 2))
         else:
-            label = torch.tensor(label)
+            label = torch.tensor(float(patient_metadata["CPC"]))
 
         # NOTE: copy was necessary to prevent "negative stride error" after decimation
         # Not sure what the performance implications are
