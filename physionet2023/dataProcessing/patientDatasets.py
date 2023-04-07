@@ -68,6 +68,12 @@ class MetadataOnlyDataset(PatientDataset):
 
         return patient_id, patient_metadata, recording_metadata
 
+    def get_by_pid(self, patient_id: str):
+        patient_metadata = self._load_patient_metadata(patient_id)
+        recording_metadata = self._load_recording_metadata(patient_id)
+
+        return patient_id, patient_metadata, recording_metadata
+
 
 if __name__ == "__main__":
     ds = AvgFFTDataset()

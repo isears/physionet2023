@@ -40,7 +40,7 @@ if __name__ == "__main__":
         model = lightning_tst_factory(tst_config, train_dl.dataset)
 
         trainer = pl.Trainer(
-            max_epochs=1,
+            max_epochs=2,
             gradient_clip_val=4.0,
             gradient_clip_algorithm="norm",
             accelerator="gpu",
@@ -63,6 +63,8 @@ if __name__ == "__main__":
             with torch.no_grad():
                 this_patient_preds.append(model(X).cpu())
                 this_patient_labels.append(y.cpu())
+
+        torch.save(torch.cat(this_patient_preds), f"cache/loo/{loo_pid}.preds.pt")
 
         preds.append(torch.cat(this_patient_preds).mean())
         labels.append(torch.cat(this_patient_labels).mean())
