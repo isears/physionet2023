@@ -8,6 +8,8 @@ from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryPreci
 from physionet2023 import LabelType, PhysionetConfig, config
 from physionet2023.modeling.scoringUtil import (
     CompetitionScore,
+    MultioutputClassifierAUROC,
+    MultioutputClassifierCompetitionScore,
     PrintableBinaryConfusionMatrix,
     RegressionAUROC,
     RegressionCompetitionScore,
@@ -53,7 +55,7 @@ class GenericPlTst(pl.LightningModule):
             ]
         elif tst_config.label_type == LabelType.SINGLECLASS:
             # self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.1]))
-            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+            self.loss_fn = torch.nn.BCELoss()
             self.scorers = [
                 BinaryAUROC(),
                 BinaryPrecision().to(device),
@@ -62,9 +64,11 @@ class GenericPlTst(pl.LightningModule):
                 CompetitionScore(),
             ]
         elif tst_config.label_type == LabelType.MULTICLASS:
-            self.loss_fn = torch.nn.Softmax()
-
-            raise NotImplementedError()
+            self.loss_fn = torch.nn.BCELoss()
+            self.scorers = [
+                MultioutputClassifierAUROC(),
+                MultioutputClassifierCompetitionScore(),
+            ]
 
     def training_step(self, batch, batch_idx):
         X, y = batch
@@ -143,7 +147,10 @@ class GenericPlTst(pl.LightningModule):
             LabelType.AGE,
         ]:
             return self.tst(X)
-        elif self.tst_config.label_type == LabelType.SINGLECLASS:
+        elif self.tst_config.label_type in [
+            LabelType.SINGLECLASS,
+            LabelType.MULTICLASS,
+        ]:
             logits = self.tst(X)
             return torch.sigmoid(logits)
 

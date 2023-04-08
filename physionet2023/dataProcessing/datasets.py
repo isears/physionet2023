@@ -175,7 +175,7 @@ class PatientDataset(torch.utils.data.Dataset):
             for idx in range(0, raw_label):
                 ret[idx] = 1.0
 
-            return ret.unsqueeze(-1)
+            return ret
         else:
             raise ValueError(f"Unsupported label type: {self.label_type}")
 

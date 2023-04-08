@@ -37,11 +37,11 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 4,
+        "batch_size": 8,
     }
 
     tst_config = PhysionetConfig(
-        save_path="ConvTst", label_type=LabelType.SINGLECLASS, **problem_params
+        save_path="ConvTst", label_type=LabelType.MULTICLASS, **problem_params
     )
 
     return tst_config
@@ -78,7 +78,7 @@ def dataloader_factory(
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=1, test_size=test_size
+            pids, random_state=42, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)
