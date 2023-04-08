@@ -2,7 +2,8 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
-from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDataset
+from physionet2023.dataProcessing.datasets import (PatientDataset,
+                                                   RecordingDataset)
 
 
 class SpectrogramDataset(RecordingDataset):

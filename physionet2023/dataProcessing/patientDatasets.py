@@ -1,3 +1,4 @@
+import mne
 import numpy as np
 import torch
 
@@ -50,7 +51,9 @@ class AvgFFTDataset(PatientDataset):
 
         aggregated_fft = aggregated_fft / sample_count
 
-        return torch.tensor(aggregated_fft, dtype=torch.float32), self._get_label(patient_metadata["Patient"])
+        return torch.tensor(aggregated_fft, dtype=torch.float32), self._get_label(
+            patient_metadata["Patient"]
+        )
 
 
 class MetadataOnlyDataset(PatientDataset):
@@ -71,6 +74,50 @@ class MetadataOnlyDataset(PatientDataset):
         recording_metadata = self._load_recording_metadata(patient_id)
 
         return patient_id, patient_metadata, recording_metadata
+
+
+class AvgSpectralDensityDataset(PatientDataset):
+    """
+    Average spectral densities over all recordings
+    """
+
+    def __init__(self, **super_kwargs):
+        super().__init__(**super_kwargs)
+        sample_X, _ = self.__getitem__(0)
+
+        assert sample_X.ndim == 2
+        self.features_dim = sample_X.shape[0]
+        self.max_len = sample_X.shape[-1]
+
+    def __getitem__(self, index: int):
+        patient_id = self.patient_ids[index]
+        patient_metadata, recording_metadata, recordings = super().__getitem__(index)
+
+        recording_sds = list()
+
+        for r in recordings:
+            # Includes delta, theta, alpha, and beta waves
+            #
+            # delta: 0.5 - 4 Hz
+            # theta: 4 - 7 Hz
+            # alpha: 8 - 13 Hz
+            # beta: 13 - 30 Hz
+            #
+            # https://en.wikipedia.org/wiki/Electroencephalography
+            this_recording_sd, _ = mne.time_frequency.psd_array_welch(
+                r, sfreq=self.sampling_frequency, fmin=0.5, fmax=30, verbose=False
+            )
+
+            recording_sds.append(this_recording_sd)
+
+        # avg along recording axis
+        X = np.mean(np.stack(recording_sds, axis=-1), axis=-1)
+
+        # ...and then channel axis
+        X = np.mean(X, axis=0)
+
+        # TODO: normalize by freq?
+        return torch.tensor(X).unsqueeze(0), self._get_label(patient_id)
 
 
 if __name__ == "__main__":

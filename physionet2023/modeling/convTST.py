@@ -54,6 +54,7 @@ def single_dl_factory(
         root_folder=data_path,
         patient_ids=pids,
         label_type=tst_config.label_type,
+        last_only=True,
         **ds_args,
     )
 
@@ -113,7 +114,11 @@ def train_fn(data_path: str = "./data", log: bool = True, test=False):
         logger = None
 
     trainer = GenericPlTrainer(
-        "./cache/convTST", logger, enable_progress_bar=True, es_patience=7
+        "./cache/convTST",
+        logger,
+        enable_progress_bar=True,
+        es_patience=5,
+        val_check_interval=1.0,
     )
 
     trainer.fit(

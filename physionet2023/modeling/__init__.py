@@ -180,7 +180,7 @@ class GenericPlTrainer(pl.Trainer):
             devices = 1
 
         super().__init__(
-            max_epochs=10,
+            max_epochs=100,
             gradient_clip_val=4.0,
             gradient_clip_algorithm="norm",
             accelerator=accelerator,

@@ -46,6 +46,8 @@ class PatientDataset(torch.utils.data.Dataset):
 
     full_record_len = 30000
 
+    sampling_frequency = 100.0
+
     def __init__(
         self,
         root_folder: str = "./data",
@@ -112,7 +114,7 @@ class PatientDataset(torch.utils.data.Dataset):
 
         # Making some assumptions about uniformity of data. Will have to rethink this if not true
         # ...seems like it is true; could take this out if performance becomes a concern
-        assert sampling_frequency == 100.0
+        assert sampling_frequency == self.sampling_frequency
         assert len(channels) == len(self.channels)
         assert recording_data.shape[-1] == self.full_record_len
 
@@ -237,7 +239,7 @@ class PatientTrainingDataset(PatientDataset):
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, shuffle=True, **super_kwargs):
+    def __init__(self, shuffle=True, last_only=False, **super_kwargs):
         super().__init__(**super_kwargs)
 
         self.shuffle = shuffle
@@ -257,6 +259,12 @@ class RecordingDataset(PatientDataset):
         else:
             recordings_dict = {
                 pid: self._load_recording_metadata(pid)["Record"].to_list()
+                for pid in self.patient_ids
+            }
+
+        if last_only:
+            recordings_dict = {
+                pid: [self._load_recording_metadata(pid)["Record"].to_list()[-1]]
                 for pid in self.patient_ids
             }
 
