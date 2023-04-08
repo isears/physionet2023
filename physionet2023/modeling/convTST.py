@@ -6,10 +6,10 @@ from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregre
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
-from physionet2023 import config
+from physionet2023 import LabelType, PhysionetConfig, config
 from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
+from physionet2023.modeling import GenericPlTrainer, GenericPlTst
 
 
 def lightning_tst_factory(tst_config: TSTConfig, ds):
@@ -19,7 +19,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
         feat_dim=ds.features_dim,
     )
 
-    lightning_wrapper = GenericPlRegressor(tst, tst_config)
+    lightning_wrapper = GenericPlTst(tst, tst_config)
 
     return lightning_wrapper
 
@@ -27,7 +27,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 1e-4,
+        "lr": 1e-5,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 1,
@@ -37,22 +37,23 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 8,
+        "batch_size": 4,
     }
 
-    tst_config = TSTConfig(save_path="ConvTst", num_classes=1, **problem_params)
+    tst_config = PhysionetConfig(
+        save_path="ConvTst", label_type=LabelType.SINGLECLASS, **problem_params
+    )
 
     return tst_config
 
 
 def single_dl_factory(
-    tst_config: TSTConfig, pids: list, data_path: str = "./data", **ds_args
+    tst_config: PhysionetConfig, pids: list, data_path: str = "./data", **ds_args
 ):
     ds = SpectrogramDataset(
         root_folder=data_path,
         patient_ids=pids,
-        for_classification=False,
-        normalize=True,
+        label_type=tst_config.label_type,
         **ds_args,
     )
 
@@ -68,7 +69,7 @@ def single_dl_factory(
 
 
 def dataloader_factory(
-    tst_config: TSTConfig,
+    tst_config: PhysionetConfig,
     data_path: str = "./data",
     deterministic_split=False,
     test_size=0.1,
@@ -77,7 +78,7 @@ def dataloader_factory(
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=42, test_size=test_size
+            pids, random_state=1, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)

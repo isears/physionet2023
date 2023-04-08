@@ -2,16 +2,13 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
-from physionet2023.dataProcessing.datasets import (PatientDataset,
-                                                   RecordingDataset)
+from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDataset
 
 
 class SpectrogramDataset(RecordingDataset):
     def __init__(
         self,
         shuffle=True,
-        for_classification=False,
-        normalize=True,
         f_min=0.5,
         f_max=30,
         **super_kwargs,
@@ -23,13 +20,6 @@ class SpectrogramDataset(RecordingDataset):
         )
         self.f_min = f_min
         self.f_max = f_max
-        self.for_classification = for_classification
-        self.normalize = normalize
-
-        if self.for_classification and self.normalize:
-            print(
-                "[WARNING] Incompatible params for_classification and normalize (normalize will have no effect)"
-            )
 
         sample_X, _ = self.__getitem__(0)
         self.dims = (sample_X.shape[1], sample_X.shape[2])
@@ -57,14 +47,7 @@ class SpectrogramDataset(RecordingDataset):
         # deal with -inf
         X[X == -np.inf] = X[X != -np.inf].min()
 
-        if self.for_classification and not self.for_testing:
-            classification_label = (label > 2).float()
-            return torch.tensor(X), classification_label.unsqueeze(-1)
-        else:
-            if self.normalize:
-                return torch.tensor(X), ((label - 1.0) / 4.0).unsqueeze(-1)
-            else:
-                return torch.tensor(X), label.unsqueeze(-1)
+        return torch.tensor(X), label
 
 
 class SpectrogramAgeDataset(SpectrogramDataset):

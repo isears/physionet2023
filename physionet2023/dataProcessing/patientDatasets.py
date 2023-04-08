@@ -50,9 +50,7 @@ class AvgFFTDataset(PatientDataset):
 
         aggregated_fft = aggregated_fft / sample_count
 
-        return torch.tensor(aggregated_fft, dtype=torch.float32), torch.tensor(
-            float(patient_metadata["CPC"]), dtype=torch.float32
-        )
+        return torch.tensor(aggregated_fft, dtype=torch.float32), self._get_label(patient_metadata["Patient"])
 
 
 class MetadataOnlyDataset(PatientDataset):

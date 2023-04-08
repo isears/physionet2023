@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 from helper_code import *
-from physionet2023 import config
+from physionet2023 import LabelType, config
 from physionet2023.modeling.rawWaveformTST import (
     config_factory,
     lightning_tst_factory,
@@ -57,8 +57,14 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
     # TODO: this dl factory method is v. wasteful, consider refactoring to a single dl generated in load_challenge_models
     dl = single_dl_factory(
-        tst_config, [patient_id], data_folder, for_testing=True, quality_cutoff=0.0
+        tst_config,
+        [patient_id],
+        data_folder,
+        quality_cutoff=0.0,
     )
+
+    # Need to manually override the label type so that the dataset doesn't try to access labels
+    dl.dataset.label_type = LabelType.DUMMY
 
     model = lightning_tst_factory(tst_config, dl.dataset)
     model.load_state_dict(models)

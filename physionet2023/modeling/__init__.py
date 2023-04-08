@@ -5,7 +5,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from torchmetrics.classification import BinaryAccuracy, BinaryAUROC, BinaryPrecision
 
-from physionet2023 import config
+from physionet2023 import LabelType, PhysionetConfig, config
 from physionet2023.modeling.scoringUtil import (
     CompetitionScore,
     PrintableBinaryConfusionMatrix,
@@ -14,27 +14,57 @@ from physionet2023.modeling.scoringUtil import (
 )
 
 
+class WeightedMSELoss(torch.nn.MSELoss):
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        de_normed = (target * 4) + 1
+        weights = torch.ones_like(de_normed)
+        weights = weights.where(de_normed == 2.0, torch.tensor(1.5).cuda())
+        weights = weights.where(de_normed == 3.0, torch.tensor(1.5).cuda())
+        weights = weights.where(de_normed == 4.0, torch.tensor(1.5).cuda())
+
+        raw_loss = torch.nn.functional.mse_loss(input, target)
+
+        return (raw_loss * weights).mean()
+
+
 class GenericPlTst(pl.LightningModule):
-    def __init__(self, tst, tst_config: TSTConfig) -> None:
+    def __init__(self, tst, tst_config: PhysionetConfig) -> None:
         super().__init__()
         self.tst = tst
 
         self.tst_config = tst_config
-        # self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.1]))
-        self.loss_fn = torch.nn.BCEWithLogitsLoss()
 
         if config.gpus_available > 0:
             device = "cuda"  # TODO: this will break if using ROCm (AMD)
         else:
             device = "cpu"
 
-        self.scorers = [
-            BinaryAUROC(),
-            BinaryPrecision().to(device),
-            BinaryAccuracy().to(device),
-            # PrintableBinaryConfusionMatrix().to(device),
-            CompetitionScore(),
-        ]
+        if tst_config.label_type == LabelType.RAW:
+            self.loss_fn = torch.nn.MSELoss()
+            self.scorers = [
+                RegressionAUROC(from_normalized=False),
+                RegressionCompetitionScore(from_normalized=False),
+            ]
+        elif tst_config.label_type == LabelType.NORMALIZED:
+            self.loss_fn = torch.nn.MSELoss()
+            self.scorers = [
+                RegressionAUROC(from_normalized=True),
+                RegressionCompetitionScore(from_normalized=True),
+            ]
+        elif tst_config.label_type == LabelType.SINGLECLASS:
+            # self.loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([0.1]))
+            self.loss_fn = torch.nn.BCEWithLogitsLoss()
+            self.scorers = [
+                BinaryAUROC(),
+                BinaryPrecision().to(device),
+                BinaryAccuracy().to(device),
+                # PrintableBinaryConfusionMatrix().to(device),
+                CompetitionScore(),
+            ]
+        elif tst_config.label_type == LabelType.MULTICLASS:
+            self.loss_fn = torch.nn.Softmax()
+
+            raise NotImplementedError()
 
     def training_step(self, batch, batch_idx):
         X, y = batch
@@ -107,37 +137,18 @@ class GenericPlTst(pl.LightningModule):
         return test_competition_score
 
     def forward(self, X):
-        logits = self.tst(X)
-        return torch.sigmoid(logits)
+        if self.tst_config.label_type in [
+            LabelType.RAW,
+            LabelType.NORMALIZED,
+            LabelType.AGE,
+        ]:
+            return self.tst(X)
+        elif self.tst_config.label_type == LabelType.SINGLECLASS:
+            logits = self.tst(X)
+            return torch.sigmoid(logits)
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
-
-
-class WeightedMSELoss(torch.nn.MSELoss):
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        de_normed = (target * 4) + 1
-        weights = torch.ones_like(de_normed)
-        weights = weights.where(de_normed == 2.0, torch.tensor(1.5).cuda())
-        weights = weights.where(de_normed == 3.0, torch.tensor(1.5).cuda())
-        weights = weights.where(de_normed == 4.0, torch.tensor(1.5).cuda())
-
-        raw_loss = torch.nn.functional.mse_loss(input, target)
-
-        return (raw_loss * weights).mean()
-
-
-class GenericPlRegressor(GenericPlTst):
-    def __init__(self, tst, tst_config: TSTConfig) -> None:
-        super().__init__(tst, tst_config)
-
-        self.scorers = [RegressionAUROC(), RegressionCompetitionScore()]
-
-        self.loss_fn = torch.nn.MSELoss()
-        # self.loss_fn = WeightedMSELoss()
-
-    def forward(self, X):
-        return self.tst(X)
 
 
 class GenericPlTrainer(pl.Trainer):
