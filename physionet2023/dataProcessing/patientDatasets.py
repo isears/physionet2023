@@ -105,23 +105,32 @@ class AvgSpectralDensityDataset(PatientDataset):
             #
             # https://en.wikipedia.org/wiki/Electroencephalography
             this_recording_sd, _ = mne.time_frequency.psd_array_welch(
-                r, sfreq=self.sampling_frequency, fmin=0.5, fmax=30, verbose=False
+                r,
+                sfreq=self.sampling_frequency,
+                fmin=0.5,
+                fmax=30,
+                verbose=False,
+                n_fft=int(self.sampling_frequency * 10),
             )
 
             recording_sds.append(this_recording_sd)
 
         # avg along recording axis
-        X = np.mean(np.stack(recording_sds, axis=-1), axis=-1)
+        # X = np.mean(np.stack(recording_sds, axis=-1), axis=-1)
+        # TODO: for now just take last recording, averaging may be causing some weirdness
+        X = recording_sds[-1]
 
-        # ...and then channel axis
-        X = np.mean(X, axis=0)
+        # log10
+        X = np.log10(X)
 
-        # TODO: normalize by freq?
-        return torch.tensor(X).unsqueeze(0), self._get_label(patient_id)
+        # Within-spectrum normalization
+        X = (X - np.mean(X)) / np.std(X)
+
+        return torch.tensor(X), self._get_label(patient_id)
 
 
 if __name__ == "__main__":
-    ds = AvgFFTDataset()
+    ds = AvgSpectralDensityDataset()
 
     for X, y in ds:
         print(X)

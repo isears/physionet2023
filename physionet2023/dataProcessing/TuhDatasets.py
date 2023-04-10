@@ -247,6 +247,9 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
 
         data = torch.log10(data)
 
+        # TODO: to match physionet dataset
+        data = (data - torch.mean(data)) / torch.std(data)
+
         return data
 
 
