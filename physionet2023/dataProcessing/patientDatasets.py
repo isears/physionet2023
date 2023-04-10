@@ -125,8 +125,8 @@ class AvgSpectralDensityDataset(PatientDataset):
 
         # Within-spectrum normalization
         X = (X - np.mean(X)) / np.std(X)
-
-        return torch.tensor(X), self._get_label(patient_id)
+        
+        return torch.tensor(X).float(), self._get_label(patient_id)
 
 
 if __name__ == "__main__":

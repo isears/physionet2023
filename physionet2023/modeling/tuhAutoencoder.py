@@ -1,18 +1,22 @@
 import pytorch_lightning as pl
 import torch
+import torchmetrics
 
 from physionet2023 import config
-from physionet2023.dataProcessing.patientDatasets import AvgSpectralDensityDataset
+from physionet2023.dataProcessing.patientDatasets import \
+    AvgSpectralDensityDataset
 from physionet2023.dataProcessing.TuhDatasets import TuhPreprocessedDataset
 
-
 # https://www.tutorialspoint.com/how-to-implementing-an-autoencoder-in-pytorch
-class Autoenc(torch.nn.Module):
-    def __init__(self, input_dim: int):
+
+
+# define the LightningModule
+class LitAutoEncoder(pl.LightningModule):
+    def __init__(self):
         super().__init__()
 
         self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(input_dim, 128),
+            torch.nn.Linear(296, 128),
             torch.nn.ReLU(),
             torch.nn.Linear(128, 64),
             torch.nn.ReLU(),
@@ -32,37 +36,55 @@ class Autoenc(torch.nn.Module):
             torch.nn.ReLU(),
             torch.nn.Linear(64, 128),
             torch.nn.ReLU(),
-            torch.nn.Linear(128, input_dim),
+            torch.nn.Linear(128, 296),
             # torch.nn.Sigmoid(),
         )
 
-    def forward(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return decoded
-
-
-# define the LightningModule
-class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, autoencoder):
-        super().__init__()
-        self.autoencoder = autoencoder
+        self.train_mse = torchmetrics.MeanSquaredError()
+        self.valid_mse = torchmetrics.MeanSquaredError()
+        self.train_losses = list()
+        self.valid_losses = list()
 
     def training_step(self, batch, batch_idx):
         # TODO: for now just using first EEG channel
         x = batch[:, 0, :]
-        x_hat = self.autoencoder(x)
+        z = self.encoder(x)
+        x_hat = self.decoder(z)
         loss = torch.nn.functional.mse_loss(x_hat, x)
         self.log("train_loss", loss)
+
+        self.train_mse.update(preds=x_hat, target=x)
+
+        self.train_losses.append(loss)
+
         return loss
+
+    def on_train_epoch_end(self) -> None:
+        print(f"\n\ntrain_loss: {sum(self.train_losses) / len(self.train_losses)}\n\n")
+        del self.train_losses
+        self.train_losses = list()
+        self.train_mse.reset()
 
     def validation_step(self, batch, batch_idx):
         # TODO: for now just using first EEG channel
-        x = batch[:, 0, :]
-        x_hat = self.autoencoder(x)
+        x, _ = batch
+        x = x[:, 0, :]
+        z = self.encoder(x)
+        x_hat = self.decoder(z)
         loss = torch.nn.functional.mse_loss(x_hat, x)
         self.log("val_loss", loss)
+
+        self.valid_mse.update(preds=x_hat, target=x)
+
+        self.valid_losses.append(loss)
+
         return loss
+
+    def on_validation_epoch_end(self) -> None:
+        print(f"\n\nval_loss: {sum(self.valid_losses) / len(self.valid_losses)}\n\n")
+        del self.valid_losses
+        self.valid_losses = list()
+        self.valid_mse.reset()
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
@@ -90,9 +112,10 @@ if __name__ == "__main__":
     )
 
     # TODO: actually get input dim from dataset
-    autoencoder = LitAutoEncoder(autoencoder=Autoenc(input_dim=296))
+    autoencoder = LitAutoEncoder()
 
-    trainer = pl.Trainer(limit_train_batches=100, max_epochs=1, logger=False)
+    trainer = pl.Trainer(limit_train_batches=100, max_epochs=5, logger=False, default_root_dir="cache/encoder_models")
     trainer.fit(
         model=autoencoder, train_dataloaders=tuh_dl, val_dataloaders=physionet_dl
     )
+
