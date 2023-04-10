@@ -88,7 +88,7 @@ def dataloader_factory(
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=42, test_size=test_size
+            pids, random_state=1, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)
