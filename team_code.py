@@ -81,7 +81,7 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
         avg_pred = torch.concat(preds).median().cpu()
     except RuntimeError:
         print("[-] WARNING no EEG data found, generating random guess prediction")
-        avg_pred = 1.0
+        avg_pred = torch.tensor(1.0)
 
     outcome_probability = regression_to_probability(avg_pred)
 
