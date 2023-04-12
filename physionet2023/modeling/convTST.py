@@ -7,8 +7,10 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import LabelType, PhysionetConfig, config
-from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
-from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
+from physionet2023.dataProcessing.patientDatasets import (
+    MetadataOnlyDataset,
+    SpectrogramDataset,
+)
 from physionet2023.modeling import GenericPlTrainer, GenericPlTst
 
 
@@ -54,7 +56,8 @@ def single_dl_factory(
         root_folder=data_path,
         patient_ids=pids,
         label_type=tst_config.label_type,
-        last_only=True,
+        include_static=False,
+        # last_only=True,
         **ds_args,
     )
 
@@ -79,7 +82,7 @@ def dataloader_factory(
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=42, test_size=test_size
+            pids, random_state=1, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)
