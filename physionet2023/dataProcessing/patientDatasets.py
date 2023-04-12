@@ -1,6 +1,7 @@
 import mne
 import numpy as np
 import torch
+from scipy.signal import spectrogram
 
 from physionet2023.dataProcessing.datasets import PatientDataset
 
@@ -125,12 +126,60 @@ class AvgSpectralDensityDataset(PatientDataset):
 
         # Within-spectrum normalization
         X = (X - np.mean(X)) / np.std(X)
-        
+
+        return torch.tensor(X).float(), self._get_label(patient_id)
+
+
+class SpectrogramDataset(PatientDataset):
+    def __init__(
+        self,
+        shuffle=True,
+        f_min=0.5,
+        f_max=30,
+        **super_kwargs,
+    ):
+        super().__init__(
+            **super_kwargs,
+        )
+        self.f_min = f_min
+        self.f_max = f_max
+
+        sample_X, _ = self.__getitem__(0)
+        self.dims = (sample_X.shape[1], sample_X.shape[2])
+        self.sample_len = self.dims[1]  # Mostly for backwards compatibility
+
+    def __getitem__(self, index: int):
+        patient_id = self.patient_ids[index]
+
+        # TODO: for now just get last recording
+        recording_metadata = self._load_recording_metadata(patient_id)
+        recording_id = recording_metadata.iloc[-1]["Record"]
+        recording_data = self._load_single_recording(patient_id, recording_id)
+
+        spectrograms = list()
+
+        for channel_idx in range(0, recording_data.shape[0]):
+            f, t, s = spectrogram(recording_data[channel_idx, :], 100.0)
+            freq_filter = np.logical_and(f > self.f_min, f < self.f_max)
+            s = s[freq_filter]
+            f = f[freq_filter]
+
+            with np.errstate(divide="ignore"):
+                s = np.log10(s)  # TODO: research alternative approaches
+
+            spectrograms.append(s)
+
+        # channels-first
+        X = np.stack(spectrograms, axis=0)
+
+        # deal with -inf
+        X[X == -np.inf] = X[X != -np.inf].min()
+
         return torch.tensor(X).float(), self._get_label(patient_id)
 
 
 if __name__ == "__main__":
-    ds = AvgSpectralDensityDataset()
+    ds = SpectrogramDataset()
 
     for X, y in ds:
         print(X)
