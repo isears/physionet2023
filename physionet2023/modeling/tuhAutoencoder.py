@@ -1,10 +1,10 @@
 import pytorch_lightning as pl
 import torch
 import torchmetrics
+from pytorch_lightning.callbacks import EarlyStopping
 
 from physionet2023 import config
-from physionet2023.dataProcessing.patientDatasets import \
-    AvgSpectralDensityDataset
+from physionet2023.dataProcessing.patientDatasets import AvgSpectralDensityDataset
 from physionet2023.dataProcessing.TuhDatasets import TuhPreprocessedDataset
 
 # https://www.tutorialspoint.com/how-to-implementing-an-autoencoder-in-pytorch
@@ -23,13 +23,9 @@ class LitAutoEncoder(pl.LightningModule):
             torch.nn.Linear(64, 36),
             torch.nn.ReLU(),
             torch.nn.Linear(36, 18),
-            torch.nn.ReLU(),
-            torch.nn.Linear(18, 9),
         )
 
         self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(9, 18),
-            torch.nn.ReLU(),
             torch.nn.Linear(18, 36),
             torch.nn.ReLU(),
             torch.nn.Linear(36, 64),
@@ -114,8 +110,21 @@ if __name__ == "__main__":
     # TODO: actually get input dim from dataset
     autoencoder = LitAutoEncoder()
 
-    trainer = pl.Trainer(limit_train_batches=100, max_epochs=5, logger=False, default_root_dir="cache/encoder_models")
+    trainer = pl.Trainer(
+        # limit_train_batches=100,
+        max_epochs=15,
+        logger=False,
+        callbacks=[
+            EarlyStopping(
+                monitor="val_loss",
+                mode="min",
+                verbose=True,
+                patience=3,
+                check_finite=False,
+            ),
+        ],
+        default_root_dir="cache/encoder_models",
+    )
     trainer.fit(
         model=autoencoder, train_dataloaders=tuh_dl, val_dataloaders=physionet_dl
     )
-

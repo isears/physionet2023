@@ -62,7 +62,7 @@ class encoderClassifier(pl.LightningModule):
             s.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=5e-4)
         return optimizer
 
     def forward(self, X):
