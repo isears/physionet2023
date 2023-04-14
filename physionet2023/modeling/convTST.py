@@ -39,7 +39,7 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 8,
+        "batch_size": 16,
     }
 
     tst_config = PhysionetConfig(
