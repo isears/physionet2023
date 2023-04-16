@@ -114,26 +114,44 @@ def regression_to_probability_smooth(regression_pred, clip=True):
     return outcome_probability
 
 
+def regression_to_probability_smooth_confident(regression_pred, clip=True):
+    if clip:
+        regression_pred = torch.clip(regression_pred, 1.0, 5.0)
+
+    # y = -2/9 * (x - 2.5)^2 + 0.5; (x < 2.5)
+    # y = 2/25 * (x - 2.5)^2 + 0.5; (x >= 2.5)
+    outcome_probability = torch.where(
+        regression_pred < 2.5,
+        ((2 / 9) * ((regression_pred - 1) ** 2)),
+        ((-2 / 25) * ((regression_pred - 5) ** 2) + 1),
+    )
+
+    return outcome_probability
+
+
 class RegressionAUROC(BinaryAUROC):
-    def __init__(self) -> None:
+    def __init__(self, from_normalized=True) -> None:
         super().__init__()
+        self.from_normalized = from_normalized
 
     def update(self, preds, target):
-        probability_outputs = regression_to_probability_smooth(preds)
+        if self.from_normalized:
+            preds = (preds * 4) + 1
+            target = (target * 4) + 1
+        probability_outputs = regression_to_probability(preds)
         binary_labels = (target > 2).float()
 
         return super().update(probability_outputs, binary_labels)
 
 
-class ClassifierAUROC(BinaryAUROC):
-    def __init__(self):
-        super().__init__()
-
+class MultioutputClassifierAUROC(BinaryAUROC):
     def update(self, preds, target):
-        # Predicting probability of "poor" outcome (CPC 3, 4, or 5)
-        poor_outcome_probability = torch.sigmoid(preds)
+        poor_outcome_probabilities = preds[:, 2] + preds[:, 3] + preds[:, 4]
+        poor_outcome_label = (
+            (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
+        ).float()
 
-        return super().update(poor_outcome_probability, target)
+        return super().update(poor_outcome_probabilities, poor_outcome_label)
 
 
 class CompetitionScore(Metric):
@@ -173,10 +191,28 @@ class CompetitionScore(Metric):
 
 
 class RegressionCompetitionScore(CompetitionScore):
+    def __init__(self, from_normalized=True) -> None:
+        super().__init__()
+        self.from_normalized = from_normalized
+
     def update(self, preds, target):
-        probability_outputs = regression_to_probability_smooth(preds)
+        if self.from_normalized:
+            preds = (preds * 4) + 1
+            target = (target * 4) + 1
+
+        probability_outputs = regression_to_probability(preds)
         binary_labels = (target > 2).float()
         return super().update(probability_outputs, binary_labels)
+
+
+class MultioutputClassifierCompetitionScore(CompetitionScore):
+    def update(self, preds, target):
+        poor_outcome_probabilities = preds[:, 2] + preds[:, 3] + preds[:, 4]
+        poor_outcome_label = (
+            (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
+        ).float()
+
+        return super().update(poor_outcome_probabilities, poor_outcome_label)
 
 
 class PrintableBinaryConfusionMatrix(BinaryConfusionMatrix):

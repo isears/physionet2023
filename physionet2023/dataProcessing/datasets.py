@@ -1,5 +1,6 @@
 import os.path
 import random
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -7,7 +8,7 @@ import torch
 from scipy.signal import decimate
 from sklearn.model_selection import train_test_split
 
-from physionet2023 import config
+from physionet2023 import LabelType, config
 from physionet2023.dataProcessing.exampleUtil import *
 
 
@@ -45,14 +46,23 @@ class PatientDataset(torch.utils.data.Dataset):
 
     full_record_len = 30000
 
+    sampling_frequency = 100.0
+
     def __init__(
         self,
         root_folder: str = "./data",
         patient_ids: list = None,
         quality_cutoff: float = 0.5,
         include_static: bool = True,
+        label_type: LabelType = LabelType.RAW,
     ):
         random.seed(0)
+
+        if not label_type in LabelType:
+            raise ValueError(f"Unsupported label type: {label_type}")
+
+        self.label_type = label_type
+
         data_folders = list()
         for x in os.listdir(root_folder):
             data_folder = os.path.join(root_folder, x)
@@ -104,7 +114,7 @@ class PatientDataset(torch.utils.data.Dataset):
 
         # Making some assumptions about uniformity of data. Will have to rethink this if not true
         # ...seems like it is true; could take this out if performance becomes a concern
-        assert sampling_frequency == 100.0
+        assert sampling_frequency == self.sampling_frequency
         assert len(channels) == len(self.channels)
         assert recording_data.shape[-1] == self.full_record_len
 
@@ -147,6 +157,28 @@ class PatientDataset(torch.utils.data.Dataset):
         assert len(recording_metadata) == len(recordings)
 
         return patient_metadata, recording_metadata, recordings
+
+    def _get_label(self, patient_id: str):
+        if self.label_type == LabelType.DUMMY:
+            return torch.tensor(float("nan")).unsqueeze(-1)
+
+        patient_metadata = self._load_patient_metadata(patient_id)
+        raw_label = int(patient_metadata["CPC"])
+
+        if self.label_type == LabelType.RAW:
+            return torch.tensor(float(raw_label)).unsqueeze(-1)
+        elif self.label_type == LabelType.NORMALIZED:
+            return torch.tensor((raw_label - 1.0) / 4.0).unsqueeze(-1)
+        elif self.label_type == LabelType.SINGLECLASS:
+            return torch.tensor(float(raw_label > 2)).unsqueeze(-1)
+        elif self.label_type == LabelType.MULTICLASS:
+            ret = torch.zeros(5)
+
+            ret[raw_label - 1] = 1.0
+
+            return ret
+        else:
+            raise ValueError(f"Unsupported label type: {self.label_type}")
 
 
 class PatientTrainingDataset(PatientDataset):
@@ -202,33 +234,49 @@ class PatientTrainingDataset(PatientDataset):
             :, left_margin : (left_margin + self.sample_len)
         ]
 
-        return (
-            torch.tensor(recording_sample),
-            torch.tensor(float(patient_metadata["CPC"])),
-        )
+        return (torch.tensor(recording_sample), self._get_label(patient_id))
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, pids: list, shuffle=True, for_testing=False, **super_kwargs):
+    def __init__(self, shuffle=True, last_only=False, **super_kwargs):
         super().__init__(**super_kwargs)
 
         self.shuffle = shuffle
-        self.for_testing = for_testing
 
         # Generate an index of tuples (patient_id, recording_id)
         self.patient_recording_index = list()
 
-        for pid in self.patient_ids:
-            if pid in pids:
-                recording_metadata = self._load_recording_metadata(pid)
-
-                for recording_id in recording_metadata["Record"].to_list():
-                    self.patient_recording_index.append((pid, recording_id))
-
-        self.patient_ids = pids
-
         if self.shuffle:
-            random.shuffle(self.patient_recording_index)
+            self.patient_ids = random.sample(self.patient_ids, len(self.patient_ids))
+            recordings_dict = {
+                pid: sorted(
+                    self._load_recording_metadata(pid)["Record"].to_list(),
+                    key=lambda k: random.random(),
+                )
+                for pid in self.patient_ids
+            }
+        else:
+            recordings_dict = {
+                pid: self._load_recording_metadata(pid)["Record"].to_list()
+                for pid in self.patient_ids
+            }
+
+        if last_only:
+            recordings_dict = {
+                pid: [self._load_recording_metadata(pid)["Record"].to_list()[-1]]
+                for pid in self.patient_ids
+            }
+
+        while len(recordings_dict) > 0:
+            this_iter_patient_ids = list(recordings_dict.copy().keys())
+
+            for patient_id in this_iter_patient_ids:
+                self.patient_recording_index.append(
+                    (patient_id, recordings_dict[patient_id].pop())
+                )
+
+                if len(recordings_dict[patient_id]) == 0:
+                    del recordings_dict[patient_id]
 
     def collate(self, batch):
         X = torch.stack([recording_data for recording_data, _, _ in batch], dim=0)
@@ -269,16 +317,10 @@ class RecordingDataset(PatientDataset):
                 for f, converter in self.static_features.items()
             ]
         )
-
-        if not self.for_testing:
-            label = torch.tensor(float(patient_metadata["CPC"]))
-        else:
-            label = torch.tensor(float("nan"))
-
         return (
             torch.tensor(recording_data),
             static_data,
-            label,
+            self._get_label(patient_id),
         )
 
 
@@ -308,15 +350,12 @@ class FftDownsamplingDataset(RecordingDataset):
 class SampleDataset(RecordingDataset):
     def __init__(
         self,
-        patient_ids: list,
         sample_len=1000,
         resample_factor: int = None,
         normalize=True,
-        for_classification=True,
         **super_kwargs,
     ):
-        super().__init__(patient_ids, include_static=False, **super_kwargs)
-        self.for_classification = for_classification
+        super().__init__(include_static=False, **super_kwargs)
         self.sample_len = sample_len
         self.patient_recording_sample_index = list()
 
@@ -366,31 +405,17 @@ class SampleDataset(RecordingDataset):
             ]
         )
 
-        if "CPC" in patient_metadata:
-            label = float(patient_metadata["CPC"])
-        else:
-            label = float("nan")
-
-        if self.for_classification:
-            label = torch.tensor(float(label > 2))
-        else:
-            label = torch.tensor(label)
-
         # NOTE: copy was necessary to prevent "negative stride error" after decimation
         # Not sure what the performance implications are
         return (
             torch.tensor(sample_data.copy()),
-            label.unsqueeze(-1),
+            self._get_label(patient_id),
         )
 
 
 class FftDataset(SampleDataset):
-    def __init__(self, patient_ids: list, for_testing=False, **super_kwargs):
-        super().__init__(
-            patient_ids=patient_ids, for_testing=for_testing, **super_kwargs
-        )
-
-        self.for_testing = for_testing
+    def __init__(self, patient_ids: list, **super_kwargs):
+        super().__init__(patient_ids=patient_ids, **super_kwargs)
 
         if self.resample_factor:
             raise NotImplementedError("FFT automatically downsamples to sample_len")
@@ -403,27 +428,29 @@ class FftDataset(SampleDataset):
         patient_metadata = self._load_patient_metadata(patient_id)
         recording_data = self._load_single_recording(patient_id, recording_id)
 
-        if self.normalize:
-            raise NotImplementedError("Normalize not implemented for fft (yet)")
-
         sample_data = recording_data[:, sample_idx : sample_idx + self.sample_len]
         X_fft = np.zeros_like(sample_data)
         for channel_idx in range(0, sample_data.shape[0]):
             X_fft[channel_idx, :] = np.abs(np.fft.fft(sample_data[channel_idx, :]))
 
-        if self.for_testing:
-            label = torch.tensor(float("nan"))
-        elif self.for_classification:
-            label = torch.tensor(float(float(patient_metadata["CPC"]) > 2))
-        else:
-            label = torch.tensor(float(patient_metadata["CPC"]))
+        # fft_resample_factor = self.sample_len / self.full_record_len
+        # X_fft_downsampled = decimate(X_fft, fft_resample_factor)
+
+        static_data = torch.tensor(
+            [
+                converter(patient_metadata[f])
+                for f, converter in self.static_features.items()
+            ]
+        )
+
+
 
         # NOTE: copy was necessary to prevent "negative stride error" after decimation
         # Not sure what the performance implications are
         return (
             torch.tensor(X_fft.copy()),
             # torch.nan_to_num(static_data, 0.0),
-            label.unsqueeze(-1),
+            self._get_label(patient_id),
         )
 
 

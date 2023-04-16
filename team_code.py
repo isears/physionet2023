@@ -14,11 +14,12 @@ import sys
 
 import joblib
 import numpy as np
+import pytorch_lightning as pl
 import torch
 
 from helper_code import *
-from physionet2023 import config
-from physionet2023.modeling.rawWaveformTST import (
+from physionet2023 import LabelType, config
+from physionet2023.modeling.convTST import (
     config_factory,
     lightning_tst_factory,
     single_dl_factory,
@@ -38,8 +39,20 @@ from physionet2023.modeling.scoringUtil import (
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
-    state_dict = train_fn(data_folder, log=False)
-    torch.save(state_dict, f"{model_folder}/state_dict")
+    trainer = pl.Trainer(
+        max_epochs=1,
+        accelerator="gpu",
+        logger=False,
+        devices=1,
+        gradient_clip_val=4.0,
+        gradient_clip_algorithm="norm",
+    )
+    tst_config = config_factory()
+    dl = single_dl_factory(tst_config, pids=None, data_path=data_folder)
+    model = lightning_tst_factory(tst_config, dl.dataset)
+    trainer.fit(model, train_dataloaders=dl)
+
+    torch.save(model.state_dict(), f"{model_folder}/state_dict")
 
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
@@ -57,8 +70,14 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
     # TODO: this dl factory method is v. wasteful, consider refactoring to a single dl generated in load_challenge_models
     dl = single_dl_factory(
-        tst_config, [patient_id], data_folder, for_testing=True, quality_cutoff=0.0
+        tst_config,
+        [patient_id],
+        data_folder,
+        quality_cutoff=0.0,
     )
+
+    # Need to manually override the label type so that the dataset doesn't try to access labels
+    dl.dataset.label_type = LabelType.DUMMY
 
     model = lightning_tst_factory(tst_config, dl.dataset)
     model.load_state_dict(models)
@@ -77,18 +96,21 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
             preds.append(model(X))
 
-    try:
-        avg_pred = torch.concat(preds).median().cpu()
-    except RuntimeError:
-        print("[-] WARNING no EEG data found, generating random guess prediction")
-        avg_pred = torch.tensor(1.0)
+        if len(preds) > 0:
+            # If it's a patient dataset, there will only ever be one, no need to avg
+            # pred = preds[0]
 
-    outcome_probability = regression_to_probability(avg_pred)
+            outcome_probability = float(torch.cat(preds, dim=0).mean().cpu())
 
-    predicted_CPC = int(avg_pred.round())
-    outcome_binary = int(outcome_probability.round())
 
-    return outcome_binary, float(outcome_probability), predicted_CPC
+            predicted_CPC = (outcome_probability * 4) + 1
+            outcome_binary = int(outcome_probability > 0.5)
+        else:
+            outcome_binary = 1
+            outcome_probability = 1.0
+            predicted_CPC = 5
+
+        return outcome_binary, float(outcome_probability), predicted_CPC
 
 
 ################################################################################

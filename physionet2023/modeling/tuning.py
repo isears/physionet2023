@@ -12,7 +12,7 @@ from sklearn.model_selection import KFold, train_test_split
 import wandb
 from physionet2023 import config
 from physionet2023.dataProcessing.datasets import PatientDataset
-from physionet2023.modeling.rawWaveformTST import (
+from physionet2023.modeling.convTST import (
     dataloader_factory,
     lightning_tst_factory,
     single_dl_factory,
@@ -20,6 +20,7 @@ from physionet2023.modeling.rawWaveformTST import (
 
 
 def objective(trial: optuna.Trial) -> float:
+    # wandb.init(reinit=True, settings=wandb.Settings(start_method="fork"))
     # Adjust based on GPU capabilities
     max_batch_size = 16
 
@@ -30,7 +31,7 @@ def objective(trial: optuna.Trial) -> float:
     trial.suggest_int("num_layers", 1, 15)
     trial.suggest_categorical("n_heads", [4, 8, 16, 32, 64])
     trial.suggest_int("dim_feedforward", 64, 1024)
-    trial.suggest_int("batch_size", max_batch_size, 512, max_batch_size)
+    trial.suggest_categorical("batch_size", [4, 8, 16, 32, 64, 128, 512, 1024])
     trial.suggest_categorical("pos_encoding", ["fixed", "learnable"])
     trial.suggest_categorical("activation", ["gelu", "relu"])
     trial.suggest_categorical("norm", ["BatchNorm", "LayerNorm"])
@@ -51,26 +52,25 @@ def objective(trial: optuna.Trial) -> float:
     else:
         accumulation_coeff = 1
 
-    pds = PatientDataset()
-
-    train_pids, valid_pids = train_test_split(pds.patient_ids)
-
-    train_dl = single_dl_factory(tst_config, train_pids, pds.root_folder)
-    valid_dl = single_dl_factory(tst_config, valid_pids, pds.root_folder)
+    train_dl, valid_dl = dataloader_factory(
+        tst_config, deterministic_split=True, data_path="./data", test_size=0.25
+    )
 
     model = lightning_tst_factory(
         tst_config,
         train_dl.dataset,
     )
 
-    logger = WandbLogger(
-        project="physionet2023wandb",
-        config=tst_config,
-        group="FftTstTuner",
-        job_type="train",
-    )
+    # logger = WandbLogger(
+    #     project="physionet2023wandb",
+    #     config=tst_config,
+    #     group="FftTstTuner",
+    #     job_type="train",
+    # )
 
-    checkpoint_callback = ModelCheckpoint(save_top_k=1, monitor="val_loss", mode="min")
+    checkpoint_callback = ModelCheckpoint(
+        save_top_k=1, monitor="val_loss", mode="min", dirpath="cache/tuning_models"
+    )
     trainer = pl.Trainer(
         max_epochs=5,
         gradient_clip_val=4.0,
@@ -78,14 +78,14 @@ def objective(trial: optuna.Trial) -> float:
         accelerator="gpu",
         devices=1,
         callbacks=[
-            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=8),
+            EarlyStopping(monitor="val_loss", mode="min", verbose=True, patience=7),
             checkpoint_callback,
         ],
-        val_check_interval=0.01,
+        val_check_interval=0.1,
         enable_checkpointing=True,
         accumulate_grad_batches=accumulation_coeff,
         enable_progress_bar=False,
-        logger=logger,
+        logger=False,
     )
 
     try:
@@ -95,16 +95,13 @@ def objective(trial: optuna.Trial) -> float:
             val_dataloaders=valid_dl,
         )
 
-        wandb.finish()
-
     except RuntimeError as e:
         del trainer
         del model
         del train_dl
         del valid_dl
         torch.cuda.empty_cache()
-
-        wandb.finish()
+        # logger.experiment.finish()
 
         if "PYTORCH_CUDA_ALLOC_CONF" in str(e):
             print(f"[WARNING] OOM for trial with params {trial.params}")
@@ -113,6 +110,7 @@ def objective(trial: optuna.Trial) -> float:
             print(f"[WARNING] Trial failed with params: {trial.params}")
             return 0.0
 
+    # logger.experiment.finish()
     best_state = torch.load(checkpoint_callback.best_model_path)["state_dict"]
     model.load_state_dict(best_state)
 
@@ -125,7 +123,7 @@ if __name__ == "__main__":
     pruner = None
     # pruner = optuna.pruners.PercentilePruner(25.0)
     study = optuna.create_study(direction="maximize", pruner=pruner)
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, timeout=(96.0 * 60.0 * 60.0))
 
     print("Best trial:")
     trial = study.best_trial

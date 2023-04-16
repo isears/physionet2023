@@ -7,16 +7,24 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import LabelType, PhysionetConfig, config
-from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
-from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
+from physionet2023.dataProcessing.patientDatasets import (
+    AvgSpectralDensityDataset,
+    MetadataOnlyDataset,
+)
 from physionet2023.modeling import GenericPlTrainer, GenericPlTst
 
 
+class UniformLengthTst(TSTransformerEncoderClassiregressor):
+    def forward(self, X):
+        padding_masks = torch.ones_like(X[:, 0, :]).bool()
+        return super().forward(X.permute(0, 2, 1), padding_masks)
+
+
 def lightning_tst_factory(tst_config: TSTConfig, ds):
-    tst = ConvTST(
+    tst = UniformLengthTst(
         **tst_config.generate_model_params(),
-        spectrogram_dims=ds.dims,
         feat_dim=ds.features_dim,
+        max_len=ds.max_len,
     )
 
     lightning_wrapper = GenericPlTst(tst, tst_config)
@@ -37,11 +45,13 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 16,
+        "batch_size": 8,
     }
 
     tst_config = PhysionetConfig(
-        save_path="ConvTst", label_type=LabelType.SINGLECLASS, **problem_params
+        save_path="SpectralDensityTST",
+        label_type=LabelType.MULTICLASS,
+        **problem_params,
     )
 
     return tst_config
@@ -49,13 +59,11 @@ def config_factory():
 
 def single_dl_factory(
     tst_config: PhysionetConfig, pids: list, data_path: str = "./data", **ds_args
-) -> torch.utils.data.DataLoader:
-    ds = SpectrogramDataset(
+):
+    ds = AvgSpectralDensityDataset(
         root_folder=data_path,
         patient_ids=pids,
         label_type=tst_config.label_type,
-        # include_static=False,
-        # quality_cutoff=0.0,
         **ds_args,
     )
 
@@ -80,7 +88,7 @@ def dataloader_factory(
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=42, test_size=test_size
+            pids, random_state=1, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)
@@ -108,19 +116,18 @@ def train_fn(data_path: str = "./data", log: bool = True, test=False):
         logger = WandbLogger(
             project="physionet2023wandb",
             config=tst_config,
-            group="ConvTST_classifier",
+            group="SpectralDensityTST",
             job_type="train",
         )
     else:
         logger = None
 
     trainer = GenericPlTrainer(
-        "./cache/convTST",
+        "./cache/SpectralDensityTST",
         logger,
         enable_progress_bar=True,
         es_patience=5,
-        val_check_interval=0.1,
-        max_epochs=5,
+        val_check_interval=1.0,
     )
 
     trainer.fit(

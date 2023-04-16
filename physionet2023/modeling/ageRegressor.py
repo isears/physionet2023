@@ -5,11 +5,15 @@ from mvtst.models.loss import NoFussCrossEntropyLoss
 from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregressor
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
+from torchmetrics import MeanAbsoluteError, MeanSquaredError
 
-from physionet2023 import LabelType, PhysionetConfig, config
-from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
-from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import GenericPlTrainer, GenericPlTst
+from physionet2023 import config
+from physionet2023.dataProcessing.datasets import PatientDataset
+from physionet2023.dataProcessing.recordingDatasets import (
+    SpectrogramAgeDataset,
+    SpectrogramDataset,
+)
+from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
 
 
 def lightning_tst_factory(tst_config: TSTConfig, ds):
@@ -19,7 +23,12 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
         feat_dim=ds.features_dim,
     )
 
-    lightning_wrapper = GenericPlTst(tst, tst_config)
+    lightning_wrapper = GenericPlRegressor(tst, tst_config)
+
+    lightning_wrapper.scorers = [
+        MeanAbsoluteError().to("cuda"),
+        MeanSquaredError().to("cuda"),
+    ]
 
     return lightning_wrapper
 
@@ -27,7 +36,7 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 1e-5,
+        "lr": 1e-3,
         "dropout": 0.1,
         "d_model_multiplier": 8,
         "num_layers": 1,
@@ -37,25 +46,22 @@ def config_factory():
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 16,
+        "batch_size": 8,
     }
 
-    tst_config = PhysionetConfig(
-        save_path="ConvTst", label_type=LabelType.SINGLECLASS, **problem_params
-    )
+    tst_config = TSTConfig(save_path="ConvTst", num_classes=1, **problem_params)
 
     return tst_config
 
 
 def single_dl_factory(
-    tst_config: PhysionetConfig, pids: list, data_path: str = "./data", **ds_args
-) -> torch.utils.data.DataLoader:
+    tst_config: TSTConfig, pids: list, data_path: str = "./data", **ds_args
+):
     ds = SpectrogramDataset(
         root_folder=data_path,
         patient_ids=pids,
-        label_type=tst_config.label_type,
-        # include_static=False,
-        # quality_cutoff=0.0,
+        for_classification=False,
+        normalize=True,
         **ds_args,
     )
 
@@ -71,19 +77,14 @@ def single_dl_factory(
 
 
 def dataloader_factory(
-    tst_config: PhysionetConfig,
-    data_path: str = "./data",
-    deterministic_split=False,
-    test_size=0.1,
+    tst_config: TSTConfig, data_path: str = "./data", deterministic_split=False
 ):
-    pids = MetadataOnlyDataset(root_folder=data_path).patient_ids
+    pids = PatientDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
-        train_pids, valid_pids = train_test_split(
-            pids, random_state=42, test_size=test_size
-        )
+        train_pids, valid_pids = train_test_split(pids, random_state=42, test_size=0.1)
     else:
-        train_pids, valid_pids = train_test_split(pids, test_size=test_size)
+        train_pids, valid_pids = train_test_split(pids, test_size=0.1)
 
     train_dl = single_dl_factory(tst_config, train_pids, data_path)
     valid_dl = single_dl_factory(tst_config, valid_pids, data_path)
@@ -94,7 +95,7 @@ def dataloader_factory(
     return train_dl, valid_dl
 
 
-def train_fn(data_path: str = "./data", log: bool = True, test=False):
+def train_fn(data_path: str = "./data", log: bool = True):
     # torch.set_float32_matmul_precision("medium")
     tst_config = config_factory()
 
@@ -108,20 +109,13 @@ def train_fn(data_path: str = "./data", log: bool = True, test=False):
         logger = WandbLogger(
             project="physionet2023wandb",
             config=tst_config,
-            group="ConvTST_classifier",
+            group="ConvTST_age_regressor",
             job_type="train",
         )
     else:
         logger = None
 
-    trainer = GenericPlTrainer(
-        "./cache/convTST",
-        logger,
-        enable_progress_bar=True,
-        es_patience=5,
-        val_check_interval=0.1,
-        max_epochs=5,
-    )
+    trainer = GenericPlTrainer(logger, enable_progress_bar=True)
 
     trainer.fit(
         model=model,
@@ -129,12 +123,9 @@ def train_fn(data_path: str = "./data", log: bool = True, test=False):
         val_dataloaders=valid_dl,
     )
 
-    model.load_state_dict(trainer.get_best_params())
-
-    trainer.test(model=model, dataloaders=valid_dl)
-
     return trainer.get_best_params()
 
 
 if __name__ == "__main__":
-    train_fn(data_path="./data", log=False, test=True)
+    params = train_fn(data_path="./data", log=False)
+    torch.save(params, "./cache/age_models/convTST.pt")
