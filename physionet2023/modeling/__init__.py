@@ -149,10 +149,12 @@ class GenericPlTst(pl.LightningModule):
             return self.tst(X)
         elif self.tst_config.label_type in [
             LabelType.SINGLECLASS,
-            LabelType.MULTICLASS,
         ]:
             logits = self.tst(X)
             return torch.sigmoid(logits)
+        elif self.tst_config.label_type in [LabelType.MULTICLASS]:
+            logits = self.tst(X)
+            return torch.softmax(logits, dim=1)
 
     def configure_optimizers(self):
         return self.tst_config.generate_optimizer(self.parameters())
@@ -166,6 +168,7 @@ class GenericPlTrainer(pl.Trainer):
         enable_progress_bar=False,
         val_check_interval=0.1,
         es_patience=7,
+        max_epochs=100,
         **extra_args,
     ):
         self.my_checkpoint_callback = ModelCheckpoint(
@@ -180,7 +183,7 @@ class GenericPlTrainer(pl.Trainer):
             devices = 1
 
         super().__init__(
-            max_epochs=100,
+            max_epochs=max_epochs,
             gradient_clip_val=4.0,
             gradient_clip_algorithm="norm",
             accelerator=accelerator,

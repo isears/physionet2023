@@ -174,8 +174,7 @@ class PatientDataset(torch.utils.data.Dataset):
         elif self.label_type == LabelType.MULTICLASS:
             ret = torch.zeros(5)
 
-            for idx in range(0, raw_label):
-                ret[idx] = 1.0
+            ret[raw_label - 1] = 1.0
 
             return ret
         else:

@@ -7,10 +7,8 @@ from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
 from physionet2023 import LabelType, PhysionetConfig, config
-from physionet2023.dataProcessing.patientDatasets import (
-    MetadataOnlyDataset,
-    SpectrogramDataset,
-)
+from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
+from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
 from physionet2023.modeling import GenericPlTrainer, GenericPlTst
 
 
@@ -51,13 +49,13 @@ def config_factory():
 
 def single_dl_factory(
     tst_config: PhysionetConfig, pids: list, data_path: str = "./data", **ds_args
-):
+) -> torch.utils.data.DataLoader:
     ds = SpectrogramDataset(
         root_folder=data_path,
         patient_ids=pids,
         label_type=tst_config.label_type,
-        include_static=False,
-        # last_only=True,
+        # include_static=False,
+        # quality_cutoff=0.0,
         **ds_args,
     )
 
@@ -121,7 +119,8 @@ def train_fn(data_path: str = "./data", log: bool = True, test=False):
         logger,
         enable_progress_bar=True,
         es_patience=5,
-        val_check_interval=1.0,
+        val_check_interval=0.1,
+        max_epochs=5,
     )
 
     trainer.fit(

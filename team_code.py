@@ -14,11 +14,12 @@ import sys
 
 import joblib
 import numpy as np
+import pytorch_lightning as pl
 import torch
 
 from helper_code import *
 from physionet2023 import LabelType, config
-from physionet2023.modeling.rawWaveformTST import (
+from physionet2023.modeling.convTST import (
     config_factory,
     lightning_tst_factory,
     single_dl_factory,
@@ -38,8 +39,20 @@ from physionet2023.modeling.scoringUtil import (
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
-    state_dict = train_fn(data_folder, log=False)
-    torch.save(state_dict, f"{model_folder}/state_dict")
+    trainer = pl.Trainer(
+        max_epochs=1,
+        accelerator="gpu",
+        logger=False,
+        devices=1,
+        gradient_clip_val=4.0,
+        gradient_clip_algorithm="norm",
+    )
+    tst_config = config_factory()
+    dl = single_dl_factory(tst_config, pids=None, data_path=data_folder)
+    model = lightning_tst_factory(tst_config, dl.dataset)
+    trainer.fit(model, train_dataloaders=dl)
+
+    torch.save(model.state_dict(), f"{model_folder}/state_dict")
 
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
@@ -83,14 +96,19 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
             preds.append(model(X))
 
-    avg_pred = torch.concat(preds).mean().cpu()
+        if len(preds) > 0:
+            pred = preds[0]
 
-    outcome_probability = regression_to_probability_smooth(avg_pred)
+            outcome_probability = pred[:, 2] + pred[:, 3] + pred[:, 4]
 
-    predicted_CPC = int(avg_pred.round())
-    outcome_binary = int(outcome_probability.round())
+            predicted_CPC = int(outcome_probability.argmax())
+            outcome_binary = int(outcome_probability.round())
+        else:
+            outcome_binary = 1
+            outcome_probability = 1.0
+            predicted_CPC = 5
 
-    return outcome_binary, float(outcome_probability), predicted_CPC
+        return outcome_binary, float(outcome_probability), predicted_CPC
 
 
 ################################################################################

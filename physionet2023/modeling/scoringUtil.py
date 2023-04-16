@@ -146,12 +146,7 @@ class RegressionAUROC(BinaryAUROC):
 
 class MultioutputClassifierAUROC(BinaryAUROC):
     def update(self, preds, target):
-        # poor_outcome_probabilities = preds[:, 2] + preds[:, 3] + preds[:, 4]
-        # For new labeling scheme:
-        poor_outcome_probabilities = (
-            preds[:, 0] + preds[:, 1] + preds[:, 2] + preds[:, 3] + preds[:, 4]
-        )
-
+        poor_outcome_probabilities = preds[:, 2] + preds[:, 3] + preds[:, 4]
         poor_outcome_label = (
             (target[:, 2] + target[:, 3] + target[:, 4]) > 0.0
         ).float()
