@@ -100,7 +100,8 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
             # If it's a patient dataset, there will only ever be one, no need to avg
             # pred = preds[0]
 
-            outcome_probability = float(torch.cat(preds, dim=0).mean())
+            outcome_probability = float(torch.cat(preds, dim=0).mean().cpu())
+
 
             predicted_CPC = (outcome_probability * 4) + 1
             outcome_binary = int(outcome_probability > 0.5)
