@@ -2,8 +2,7 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
-from physionet2023.dataProcessing.datasets import (PatientDataset,
-                                                   RecordingDataset)
+from physionet2023.dataProcessing.datasets import PatientDataset, RecordingDataset
 
 
 class SpectrogramDataset(RecordingDataset):
@@ -22,9 +21,14 @@ class SpectrogramDataset(RecordingDataset):
         self.f_min = f_min
         self.f_max = f_max
 
-        sample_X, _ = self.__getitem__(0)
-        self.dims = (sample_X.shape[1], sample_X.shape[2])
-        self.sample_len = self.dims[1]  # Mostly for backwards compatibility
+        try:
+            sample_X, _ = self.__getitem__(0)
+            self.dims = (sample_X.shape[1], sample_X.shape[2])
+            self.sample_len = self.dims[1]  # Mostly for backwards compatibility
+        except IndexError:
+            # dataset is empty and nothing matters anyway
+            self.dims = (75, 133)
+            self.sample_len = self.dims[1]
 
     def __getitem__(self, index: int):
         recording_data, static_data, label = super().__getitem__(index)
