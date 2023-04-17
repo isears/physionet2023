@@ -8,10 +8,13 @@ from physionet2023.dataProcessing.datasets import PatientDataset
 
 
 class RecordingDataset(PatientDataset):
-    def __init__(self, shuffle=True, last_only=False, **super_kwargs):
+    def __init__(
+        self, shuffle=True, last_only=False, include_static=False, **super_kwargs
+    ):
         super().__init__(**super_kwargs)
 
         self.shuffle = shuffle
+        self.include_static = include_static
 
         # Generate an index of tuples (patient_id, recording_id)
         self.patient_recording_index = list()
@@ -87,11 +90,15 @@ class RecordingDataset(PatientDataset):
                 for f, converter in self.static_features.items()
             ]
         )
-        return (
-            torch.tensor(recording_data),
-            static_data,
-            self._get_label(patient_id),
-        )
+
+        if self.include_static:
+            return (
+                torch.tensor(recording_data),
+                static_data,
+                self._get_label(patient_id),
+            )
+        else:
+            return torch.tensor(recording_data), self._get_label(patient_id)
 
 
 class FftDownsamplingDataset(RecordingDataset):
