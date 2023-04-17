@@ -163,7 +163,12 @@ class PatientDataset(torch.utils.data.Dataset):
             return torch.tensor(float("nan")).unsqueeze(-1)
 
         patient_metadata = self._load_patient_metadata(patient_id)
-        raw_label = int(patient_metadata["CPC"])
+
+        try:
+            raw_label = int(patient_metadata["CPC"])
+        except KeyError:
+            print("[*] Warning: label not found, returning made-up label")
+            raw_label = 1
 
         if self.label_type == LabelType.RAW:
             return torch.tensor(float(raw_label)).unsqueeze(-1)
@@ -442,8 +447,6 @@ class FftDataset(SampleDataset):
                 for f, converter in self.static_features.items()
             ]
         )
-
-
 
         # NOTE: copy was necessary to prevent "negative stride error" after decimation
         # Not sure what the performance implications are
