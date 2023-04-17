@@ -54,8 +54,9 @@ def single_dl_factory(
         root_folder=data_path,
         patient_ids=pids,
         label_type=tst_config.label_type,
+        preprocess=True,
         # include_static=False,
-        # quality_cutoff=0.0,
+        quality_cutoff=0.0,
         **ds_args,
     )
 

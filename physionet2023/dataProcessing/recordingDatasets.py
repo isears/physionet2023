@@ -2,19 +2,53 @@ import random
 
 import numpy as np
 import torch
-from scipy.signal import decimate, spectrogram
+from scipy.signal import decimate, resample_poly, spectrogram
+from sklearn.preprocessing import robust_scale
 
 from physionet2023.dataProcessing.datasets import PatientDataset
 
 
+def preprocess_signal(
+    sig_in: np.ndarray, original_rate: int = 100, common_rate: int = 100
+) -> np.ndarray:
+    # Robust scaling, low pass filter, resample
+    sig_out = sig_in
+
+    # robust scaling
+    sig_out = robust_scale(sig_in, axis=1)  # TODO: double check this is the right axis
+
+    # resampling (includes low-pass filter)
+    if common_rate > original_rate:
+        up = common_rate
+        down = original_rate
+    else:
+        up = common_rate
+        down = original_rate
+
+    factor = np.gcd(up, down)
+
+    up = int(up / factor)
+    down = int(down / factor)
+
+    sig_out = resample_poly(sig_out, up, down)
+
+    return sig_out
+
+
 class RecordingDataset(PatientDataset):
     def __init__(
-        self, shuffle=True, last_only=False, include_static=False, **super_kwargs
+        self,
+        shuffle=True,
+        last_only=False,
+        include_static=False,
+        preprocess=False,
+        **super_kwargs,
     ):
-        super().__init__(**super_kwargs)
+        super().__init__(include_static=include_static, **super_kwargs)
 
         self.shuffle = shuffle
         self.include_static = include_static
+        self.preprocess = preprocess
 
         # Generate an index of tuples (patient_id, recording_id)
         self.patient_recording_index = list()
@@ -51,31 +85,6 @@ class RecordingDataset(PatientDataset):
                 if len(recordings_dict[patient_id]) == 0:
                     del recordings_dict[patient_id]
 
-    def collate(self, batch):
-        X = torch.stack([recording_data for recording_data, _, _ in batch], dim=0)
-        y = torch.stack([label for _, _, label in batch], dim=0)
-
-        if self.include_static:
-            static_data = torch.stack([s for _, s, _ in batch], dim=0)
-
-            # Repeat static data over timeseries dimension, then concat with X
-            static_data_repeat = static_data.unsqueeze(2).repeat(1, 1, X.shape[-1])
-            X_with_static = torch.cat((X, static_data_repeat), 1)
-
-            return X_with_static, y
-        else:
-            return X, y
-
-    def tst_collate(self, batch):
-        """
-        TST also needs pad_mask, even though all sequences are the same length
-        """
-        X, y = self.collate(batch)
-
-        pad_mask = torch.ones_like(X[:, 0, :]).bool()
-
-        return X.permute(0, 2, 1), y, pad_mask, "DummyID"
-
     def __len__(self):
         return len(self.patient_recording_index)
 
@@ -83,6 +92,9 @@ class RecordingDataset(PatientDataset):
         patient_id, recording_id = self.patient_recording_index[index]
         patient_metadata = self._load_patient_metadata(patient_id)
         recording_data = self._load_single_recording(patient_id, recording_id)
+
+        if self.preprocess:
+            recording_data = preprocess_signal(recording_data)
 
         static_data = torch.tensor(
             [
@@ -103,7 +115,7 @@ class RecordingDataset(PatientDataset):
 
 class FftDownsamplingDataset(RecordingDataset):
     def __init__(self, pids: list, sample_len=1000, **super_kwargs):
-        super().__init__(pids, **super_kwargs)
+        super().__init__(pids, include_static=False, **super_kwargs)
 
         self.sample_len = sample_len
 
@@ -145,7 +157,7 @@ class SpectrogramDataset(RecordingDataset):
         self.sample_len = self.dims[1]  # Mostly for backwards compatibility
 
     def __getitem__(self, index: int):
-        recording_data, static_data, label = super().__getitem__(index)
+        recording_data, label = super().__getitem__(index)
 
         spectrograms = list()
 
@@ -188,7 +200,7 @@ class SpectrogramAgeDataset(SpectrogramDataset):
 
 if __name__ == "__main__":
     pds = PatientDataset()
-    ds = SpectrogramAgeDataset(pds.patient_ids)
+    ds = RecordingDataset(pds.patient_ids, preprocess=True)
 
     shape = None
 
