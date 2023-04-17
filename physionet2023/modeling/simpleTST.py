@@ -73,7 +73,7 @@ class OneDimensionalConvTST(torch.nn.Module):
         output = self.act(output)
         output = self.maxpool2(output)
 
-        output = torch.flatten(output, 2)
+        # output = torch.flatten(output, 2)
 
         return output
 

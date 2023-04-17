@@ -16,27 +16,29 @@ class SimpleCNN(torch.nn.Module):
         super().__init__()
 
         self.conv1 = torch.nn.Conv1d(
-            in_channels=n_channels, out_channels=20, kernel_size=5, dilation=9
+            in_channels=n_channels, out_channels=n_channels, kernel_size=5, dilation=9
         )
         self.relu1 = torch.nn.ReLU()
-        self.maxpool1 = torch.nn.MaxPool2d(kernel_size=5)
-        self.conv2 = torch.nn.Conv2d(in_channels=20, out_channels=50, kernel_size=5)
+        self.maxpool1 = torch.nn.MaxPool1d(kernel_size=5)
+        self.conv2 = torch.nn.Conv1d(
+            in_channels=n_channels, out_channels=n_channels, kernel_size=5
+        )
         self.relu2 = torch.nn.ReLU()
-        self.maxpool2 = torch.nn.MaxPool2d(kernel_size=5)
+        self.maxpool2 = torch.nn.MaxPool1d(kernel_size=5)
 
         # TODO: this got hard-coded but maybe shouldn't be
-        self.fc1 = torch.nn.Linear(in_features=23968, out_features=500)
+        self.fc1 = torch.nn.Linear(in_features=21546, out_features=1000)
         self.relu3 = torch.nn.ReLU()
-        self.fc2 = torch.nn.Linear(in_features=500, out_features=1)
+        self.fc2 = torch.nn.Linear(in_features=1000, out_features=1)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.maxpool1(x)
 
-        # x = self.conv2(x)
-        # x = self.relu2(x)
-        # x = self.maxpool2(x)
+        x = self.conv2(x)
+        x = self.relu2(x)
+        x = self.maxpool2(x)
 
         x = torch.flatten(x, 1)
         x = self.fc1(x)
