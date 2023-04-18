@@ -4,6 +4,8 @@ import mne
 import numpy as np
 import torch
 
+from physionet2023.dataProcessing.recordingDatasets import preprocess_signal
+
 
 class TuhPatientDataset(torch.utils.data.Dataset):
     # PIDs with insufficient channels to reconstruct the physionet bipolar channels
@@ -190,22 +192,6 @@ class TuhPatientDataset(torch.utils.data.Dataset):
 
         return eeg_waveform, edf_obj.info["sfreq"]
 
-    def __getitem__(self, index: int):
-        eeg_waveform, sfreq = self._get_physionet_channels(index)
-
-        sd, _ = mne.time_frequency.psd_array_welch(
-            eeg_waveform,
-            sfreq=sfreq,
-            fmin=0.5,
-            fmax=30,
-            verbose=False,
-            n_fft=int(sfreq * self.fft_coeff),
-        )
-
-        # X = np.mean(sd, axis=0)
-
-        return torch.tensor(sd)
-
     def get_channels(self, index: int):
         all_possible_edfs = glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
 
@@ -227,6 +213,13 @@ class TuhPatientDataset(torch.utils.data.Dataset):
 
         edf_obj = mne.io.read_raw_edf(all_possible_edfs[0], verbose=False)
         return edf_obj
+
+    def __getitem__(self, index: int):
+        eeg_waveform, sfreq = self._get_physionet_channels(index)
+
+        processed_signal = preprocess_signal(eeg_waveform, original_rate=int(sfreq))
+
+        return torch.tensor(processed_signal)
 
 
 class TuhPreprocessedDataset(torch.utils.data.Dataset):
@@ -254,6 +247,6 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
 
 
 if __name__ == "__main__":
-    ds = TuhPreprocessedDataset()
+    ds = TuhPatientDataset()
     print(len(ds))
     a = ds[0]

@@ -30,7 +30,7 @@ def preprocess_signal(
     up = int(up / factor)
     down = int(down / factor)
 
-    sig_out = resample_poly(sig_out, up, down)
+    sig_out = resample_poly(sig_out, up, down, axis=1)
 
     return sig_out
 
