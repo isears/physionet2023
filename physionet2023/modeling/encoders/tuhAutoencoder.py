@@ -4,36 +4,83 @@ import torchmetrics
 from pytorch_lightning.callbacks import EarlyStopping
 
 from physionet2023 import config
-from physionet2023.dataProcessing.patientDatasets import AvgSpectralDensityDataset
+from physionet2023.dataProcessing.recordingDatasets import RecordingDataset
 from physionet2023.dataProcessing.TuhDatasets import TuhPreprocessedDataset
-
-# https://www.tutorialspoint.com/how-to-implementing-an-autoencoder-in-pytorch
 
 
 # define the LightningModule
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, channels=18):
         super().__init__()
 
+        """
+        self.conv1 = nn.Conv2d(3, 16, 3, padding=1)  
+        self.conv2 = nn.Conv2d(16, 4, 3, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+       
+        #Decoder
+        self.t_conv1 = nn.ConvTranspose2d(4, 16, 2, stride=2)
+        self.t_conv2 = nn.ConvTranspose2d(16, 3, 2, stride=2)
+        """
+
         self.encoder = torch.nn.Sequential(
-            torch.nn.Linear(296, 128),
+            torch.nn.Conv1d(
+                in_channels=channels,
+                out_channels=channels * 2,
+                kernel_size=5,
+                stride=2,
+                padding=1,
+                # dilation=9,
+            ),
             torch.nn.ReLU(),
-            torch.nn.Linear(128, 64),
+            torch.nn.MaxPool1d(kernel_size=10),
+            torch.nn.Conv1d(
+                in_channels=channels * 2,
+                out_channels=channels * 4,
+                kernel_size=5,
+                stride=2,
+                padding=1,
+                # dilation=9,
+            ),
             torch.nn.ReLU(),
-            torch.nn.Linear(64, 36),
+            torch.nn.MaxPool1d(kernel_size=8),
+            torch.nn.Conv1d(
+                in_channels=channels * 4,
+                out_channels=channels * 8,
+                kernel_size=5,
+                # dilation=9,
+            ),
             torch.nn.ReLU(),
-            torch.nn.Linear(36, 18),
+            torch.nn.MaxPool1d(kernel_size=4),
         )
 
         self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(18, 36),
+            torch.nn.ConvTranspose1d(
+                in_channels=channels * 8,
+                out_channels=channels * 4,
+                kernel_size=5,
+                # dilation=9,
+            ),
             torch.nn.ReLU(),
-            torch.nn.Linear(36, 64),
+            torch.nn.ConvTranspose1d(
+                in_channels=channels * 4,
+                out_channels=channels * 2,
+                kernel_size=5,
+                stride=2,
+                padding=1,
+                output_padding=1
+                # dilation=9,
+            ),
             torch.nn.ReLU(),
-            torch.nn.Linear(64, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, 296),
-            # torch.nn.Sigmoid(),
+            torch.nn.ConvTranspose1d(
+                in_channels=channels * 2,
+                out_channels=channels,
+                kernel_size=5,
+                stride=2,
+                padding=1,
+                output_padding=1
+                # dilation=9,
+            ),
         )
 
         self.train_mse = torchmetrics.MeanSquaredError()
@@ -42,8 +89,7 @@ class LitAutoEncoder(pl.LightningModule):
         self.valid_losses = list()
 
     def training_step(self, batch, batch_idx):
-        # TODO: for now just using first EEG channel
-        x = batch[:, 0, :]
+        x = batch
         z = self.encoder(x)
         x_hat = self.decoder(z)
         loss = torch.nn.functional.mse_loss(x_hat, x)
@@ -62,9 +108,7 @@ class LitAutoEncoder(pl.LightningModule):
         self.train_mse.reset()
 
     def validation_step(self, batch, batch_idx):
-        # TODO: for now just using first EEG channel
         x, _ = batch
-        x = x[:, 0, :]
         z = self.encoder(x)
         x_hat = self.decoder(z)
         loss = torch.nn.functional.mse_loss(x_hat, x)
@@ -89,7 +133,7 @@ class LitAutoEncoder(pl.LightningModule):
 
 if __name__ == "__main__":
     tuh_ds = TuhPreprocessedDataset()
-    physionet_ds = AvgSpectralDensityDataset()
+    physionet_ds = RecordingDataset()
 
     tuh_dl = torch.utils.data.DataLoader(
         tuh_ds,

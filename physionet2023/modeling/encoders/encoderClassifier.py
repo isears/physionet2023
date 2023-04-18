@@ -6,8 +6,8 @@ from torchmetrics.classification import BinaryAUROC
 
 from physionet2023 import LabelType, config
 from physionet2023.dataProcessing.patientDatasets import AvgSpectralDensityDataset
+from physionet2023.modeling.encoders.tuhAutoencoder import LitAutoEncoder
 from physionet2023.modeling.scoringUtil import CompetitionScore
-from physionet2023.modeling.tuhAutoencoder import LitAutoEncoder
 
 
 class encoderClassifier(pl.LightningModule):

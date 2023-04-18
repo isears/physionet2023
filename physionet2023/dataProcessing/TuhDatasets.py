@@ -223,12 +223,13 @@ class TuhPatientDataset(torch.utils.data.Dataset):
 
 
 class TuhPreprocessedDataset(torch.utils.data.Dataset):
+
+    seq_len = 30000
+
     def __init__(self, path="cache/tuh_cache") -> None:
         super().__init__()
 
         self.fnames = [f for f in glob.glob(f"{path}/*.pt") if not f.startswith("_")]
-        self.means = torch.load(f"{path}/_means.pt")
-        self.stds = torch.load(f"{path}/_stds.pt")
 
     def __len__(self):
         return len(self.fnames)
@@ -236,17 +237,26 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
     def __getitem__(self, index: int):
         data = torch.load(self.fnames[index])
 
-        # data = (data - self.means) / self.stds
+        if data.shape[-1] > self.seq_len:
+            overflow = data.shape[-1] - self.seq_len
+            left_margin = int(overflow / 2)
+            right_margin = data.shape[-1] - left_margin
 
-        data = torch.log10(data)
+            ret = data[:, left_margin:right_margin]
 
-        # TODO: to match physionet dataset
-        data = (data - torch.mean(data)) / torch.std(data)
+        elif data.shape[-1] < self.seq_len:
+            pad = self.seq_len - data.shape[-1]
+            left_pad = int(torch.floor(pad / 2))
+            right_pad = int(torch.ceil(pad / 2))
 
-        return data.float()
+            ret = torch.pad(data, (left_pad, right_pad))
+
+        assert ret.shape[-1] == self.seq_len
+
+        return ret.float()
 
 
 if __name__ == "__main__":
-    ds = TuhPatientDataset()
+    ds = TuhPreprocessedDataset()
     print(len(ds))
     a = ds[0]
