@@ -246,10 +246,12 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
 
         elif data.shape[-1] < self.seq_len:
             pad = self.seq_len - data.shape[-1]
-            left_pad = int(torch.floor(pad / 2))
-            right_pad = int(torch.ceil(pad / 2))
+            left_pad = int(np.floor(pad / 2))
+            right_pad = int(np.ceil(pad / 2))
 
-            ret = torch.pad(data, (left_pad, right_pad))
+            ret = torch.nn.functional.pad(data, (left_pad, right_pad))
+        else:
+            ret = data
 
         assert ret.shape[-1] == self.seq_len
 

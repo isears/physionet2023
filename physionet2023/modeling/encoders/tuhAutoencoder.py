@@ -27,66 +27,64 @@ class LitAutoEncoder(pl.LightningModule):
             torch.nn.Conv1d(
                 in_channels=channels,
                 out_channels=channels * 2,
-                kernel_size=5,
-                stride=2,
+                kernel_size=3,
                 padding=1,
                 # dilation=9,
             ),
             torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=10),
+            torch.nn.MaxPool1d(kernel_size=2, stride=2),
             torch.nn.Conv1d(
                 in_channels=channels * 2,
                 out_channels=channels * 4,
-                kernel_size=5,
-                stride=2,
+                kernel_size=3,
                 padding=1,
                 # dilation=9,
             ),
             torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=8),
-            torch.nn.Conv1d(
-                in_channels=channels * 4,
-                out_channels=channels * 8,
-                kernel_size=5,
-                # dilation=9,
-            ),
-            torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=4),
+            torch.nn.MaxPool1d(kernel_size=2, stride=2),
+            # torch.nn.Conv1d(
+            #     in_channels=channels * 4,
+            #     out_channels=channels * 8,
+            #     kernel_size=5,
+            #     stride=2,
+            #     padding=1,
+            #     # dilation=9,
+            # ),
+            # torch.nn.ReLU(),
+            # torch.nn.MaxPool1d(kernel_size=4),
         )
 
         self.decoder = torch.nn.Sequential(
-            torch.nn.ConvTranspose1d(
-                in_channels=channels * 8,
-                out_channels=channels * 4,
-                kernel_size=5,
-                # dilation=9,
-            ),
-            torch.nn.ReLU(),
+            # torch.nn.ConvTranspose1d(
+            #     in_channels=channels * 8,
+            #     out_channels=channels * 4,
+            #     kernel_size=5,
+            #     stride=2,
+            #     padding=1,
+            #     # dilation=9,
+            # ),
+            # torch.nn.ReLU(),
             torch.nn.ConvTranspose1d(
                 in_channels=channels * 4,
                 out_channels=channels * 2,
-                kernel_size=5,
+                kernel_size=4,
                 stride=2,
                 padding=1,
-                output_padding=1
                 # dilation=9,
             ),
             torch.nn.ReLU(),
             torch.nn.ConvTranspose1d(
                 in_channels=channels * 2,
                 out_channels=channels,
-                kernel_size=5,
+                kernel_size=4,
                 stride=2,
                 padding=1,
-                output_padding=1
                 # dilation=9,
             ),
         )
 
         self.train_mse = torchmetrics.MeanSquaredError()
         self.valid_mse = torchmetrics.MeanSquaredError()
-        self.train_losses = list()
-        self.valid_losses = list()
 
     def training_step(self, batch, batch_idx):
         x = batch
@@ -97,14 +95,10 @@ class LitAutoEncoder(pl.LightningModule):
 
         self.train_mse.update(preds=x_hat, target=x)
 
-        self.train_losses.append(loss)
-
         return loss
 
     def on_train_epoch_end(self) -> None:
-        print(f"\n\ntrain_loss: {sum(self.train_losses) / len(self.train_losses)}\n\n")
-        del self.train_losses
-        self.train_losses = list()
+        print(f"\n\ntrain_loss: {self.train_mse.compute()}\n\n")
         self.train_mse.reset()
 
     def validation_step(self, batch, batch_idx):
@@ -116,14 +110,10 @@ class LitAutoEncoder(pl.LightningModule):
 
         self.valid_mse.update(preds=x_hat, target=x)
 
-        self.valid_losses.append(loss)
-
         return loss
 
     def on_validation_epoch_end(self) -> None:
-        print(f"\n\nval_loss: {sum(self.valid_losses) / len(self.valid_losses)}\n\n")
-        del self.valid_losses
-        self.valid_losses = list()
+        print(f"\n\nval_loss: {self.valid_mse.compute()}\n\n")
         self.valid_mse.reset()
 
     def configure_optimizers(self):
