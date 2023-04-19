@@ -26,22 +26,22 @@ class LitAutoEncoder(pl.LightningModule):
         self.encoder = torch.nn.Sequential(
             torch.nn.Conv1d(
                 in_channels=channels,
-                out_channels=channels * 2,
-                kernel_size=3,
-                padding=1,
+                out_channels=channels,
+                kernel_size=5,
+                padding=2,
                 # dilation=9,
             ),
             torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=2, stride=2),
+            torch.nn.MaxPool1d(kernel_size=2),
             torch.nn.Conv1d(
-                in_channels=channels * 2,
-                out_channels=channels * 4,
+                in_channels=channels,
+                out_channels=channels,
                 kernel_size=3,
                 padding=1,
                 # dilation=9,
             ),
             torch.nn.ReLU(),
-            torch.nn.MaxPool1d(kernel_size=2, stride=2),
+            torch.nn.MaxPool1d(kernel_size=2),
             # torch.nn.Conv1d(
             #     in_channels=channels * 4,
             #     out_channels=channels * 8,
@@ -65,20 +65,18 @@ class LitAutoEncoder(pl.LightningModule):
             # ),
             # torch.nn.ReLU(),
             torch.nn.ConvTranspose1d(
-                in_channels=channels * 4,
-                out_channels=channels * 2,
-                kernel_size=4,
+                in_channels=channels,
+                out_channels=channels,
+                kernel_size=2,
                 stride=2,
-                padding=1,
                 # dilation=9,
             ),
             torch.nn.ReLU(),
             torch.nn.ConvTranspose1d(
-                in_channels=channels * 2,
+                in_channels=channels,
                 out_channels=channels,
-                kernel_size=4,
+                kernel_size=2,
                 stride=2,
-                padding=1,
                 # dilation=9,
             ),
         )
@@ -123,7 +121,7 @@ class LitAutoEncoder(pl.LightningModule):
 
 if __name__ == "__main__":
     tuh_ds = TuhPreprocessedDataset()
-    physionet_ds = RecordingDataset()
+    physionet_ds = RecordingDataset(preprocess=True, last_only=True)
 
     tuh_dl = torch.utils.data.DataLoader(
         tuh_ds,
