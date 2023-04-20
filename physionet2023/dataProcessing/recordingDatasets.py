@@ -137,11 +137,13 @@ class FftDownsamplingDataset(RecordingDataset):
 
 
 class SpectrogramDataset(RecordingDataset):
+    # Cutoff frequencies for spectrogram
+    f_min = 0.5
+    f_max = 30
+
     def __init__(
         self,
         shuffle=True,
-        f_min=0.5,
-        f_max=30,
         **super_kwargs,
     ):
         super().__init__(
@@ -149,21 +151,18 @@ class SpectrogramDataset(RecordingDataset):
             include_static=False,
             **super_kwargs,
         )
-        self.f_min = f_min
-        self.f_max = f_max
 
         sample_X, _ = self.__getitem__(0)
         self.dims = (sample_X.shape[1], sample_X.shape[2])
         self.sample_len = self.dims[1]  # Mostly for backwards compatibility
 
-    def __getitem__(self, index: int):
-        recording_data, label = super().__getitem__(index)
-
+    @classmethod
+    def _to_spectrogram(cls, eeg_data):
         spectrograms = list()
 
-        for channel_idx in range(0, recording_data.shape[0]):
-            f, t, s = spectrogram(recording_data[channel_idx, :], 100.0)
-            freq_filter = np.logical_and(f > self.f_min, f < self.f_max)
+        for channel_idx in range(0, eeg_data.shape[0]):
+            f, t, s = spectrogram(eeg_data[channel_idx, :], 100.0)
+            freq_filter = np.logical_and(f > cls.f_min, f < cls.f_max)
             s = s[freq_filter]
             f = f[freq_filter]
 
@@ -174,11 +173,17 @@ class SpectrogramDataset(RecordingDataset):
 
         # channels-first
         X = np.stack(spectrograms, axis=0)
-
         # deal with -inf
         X[X == -np.inf] = X[X != -np.inf].min()
+        # (18, 75, 133)
+        return torch.tensor(X)
 
-        return torch.tensor(X), label
+    def __getitem__(self, index: int):
+        recording_data, label = super().__getitem__(index)
+
+        X = self.__class__._to_spectrogram(recording_data)
+
+        return X, label
 
 
 class SpectrogramAgeDataset(SpectrogramDataset):
@@ -200,7 +205,7 @@ class SpectrogramAgeDataset(SpectrogramDataset):
 
 if __name__ == "__main__":
     pds = PatientDataset()
-    ds = RecordingDataset(pds.patient_ids, preprocess=True)
+    ds = SpectrogramDataset(pds.patient_ids)
 
     shape = None
 
