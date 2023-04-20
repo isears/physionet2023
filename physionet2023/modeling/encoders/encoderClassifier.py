@@ -7,7 +7,7 @@ from torchmetrics.classification import BinaryAUROC
 from physionet2023 import LabelType, config
 from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
 from physionet2023.dataProcessing.recordingDatasets import RecordingDataset
-from physionet2023.modeling.encoders.tuhAutoencoder import LitAutoEncoder
+from physionet2023.modeling.encoders.tuh1dAutoencoder import LitAutoEncoder
 from physionet2023.modeling.scoringUtil import CompetitionScore
 
 
