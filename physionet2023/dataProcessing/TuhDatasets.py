@@ -226,7 +226,7 @@ class TuhBestRecordingDataset(TuhPatientDataset):
                 return float("nan")
         except Exception as e:
             print(f"Warning, caught exception: {e} (index {index})")
-            return float('nan')
+            return float("nan")
 
 
 class TuhPreprocessedDataset(torch.utils.data.Dataset):
@@ -244,25 +244,7 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
     def __getitem__(self, index: int):
         data = torch.load(self.fnames[index])
 
-        if data.shape[-1] > self.seq_len:
-            overflow = data.shape[-1] - self.seq_len
-            left_margin = int(overflow / 2)
-            right_margin = data.shape[-1] - left_margin
-
-            ret = data[:, left_margin:right_margin]
-
-        elif data.shape[-1] < self.seq_len:
-            pad = self.seq_len - data.shape[-1]
-            left_pad = int(np.floor(pad / 2))
-            right_pad = int(np.ceil(pad / 2))
-
-            ret = torch.nn.functional.pad(data, (left_pad, right_pad))
-        else:
-            ret = data
-
-        assert ret.shape[-1] == self.seq_len
-
-        return ret.float()
+        return data.float()
 
 
 if __name__ == "__main__":

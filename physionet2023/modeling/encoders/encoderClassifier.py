@@ -6,8 +6,11 @@ from torchmetrics.classification import BinaryAUROC
 
 from physionet2023 import LabelType, config
 from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
-from physionet2023.dataProcessing.recordingDatasets import RecordingDataset
-from physionet2023.modeling.encoders.tuh1dAutoencoder import LitAutoEncoder
+from physionet2023.dataProcessing.recordingDatasets import (
+    RecordingDataset,
+    SpectrogramDataset,
+)
+from physionet2023.modeling.encoders.tuhSpectrogramAutoencoder import LitAutoEncoder
 from physionet2023.modeling.scoringUtil import CompetitionScore
 
 
@@ -16,13 +19,13 @@ class encoderClassifier(pl.LightningModule):
         super().__init__()
 
         self.autoencoder = LitAutoEncoder.load_from_checkpoint(
-            "./cache/encoder_models/checkpoints/epoch=5-step=5622.ckpt"
+            "./cache/encoder_models/checkpoints/epoch=14-step=13995.ckpt"
         )
         self.autoencoder.freeze()
 
         # TODO: need to reduce reliance on magic numbers here
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(135000, 1000),
+            torch.nn.Linear(41344, 1000),
             torch.nn.ReLU(),
             torch.nn.Linear(1000, 100),
             torch.nn.ReLU(),
@@ -44,7 +47,6 @@ class encoderClassifier(pl.LightningModule):
         pass
 
     def validation_step(self, batch, batch_idx):
-        # TODO: for now just using first EEG channel
         x, y = batch
         preds = self.forward(x)
         loss = torch.nn.functional.binary_cross_entropy(preds, y)
@@ -72,7 +74,7 @@ class encoderClassifier(pl.LightningModule):
 
 
 def single_dl_factory(pids: list, data_path: str = "./data", **ds_args):
-    ds = RecordingDataset(
+    ds = SpectrogramDataset(
         root_folder=data_path,
         patient_ids=pids,
         label_type=LabelType.SINGLECLASS,
