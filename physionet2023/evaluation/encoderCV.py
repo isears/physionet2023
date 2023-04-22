@@ -53,7 +53,9 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         if sys.argv[1] == "pretrained":
             pretrained = True
+            print("[*] Doing cross validation with pretrained encoder")
         elif sys.argv[1] == "unpretrained":
+            print("[*] Doing cross validation without pretrained encoder")
             pretrained = False
         else:
             raise ValueError(f"Invalid first argument: {sys.argv[1]}")

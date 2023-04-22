@@ -19,7 +19,7 @@ class ConvEncoderTST(pl.LightningModule):
         if pretrained:
 
             self.autoencoder = LitAutoEncoder.load_from_checkpoint(
-                "./cache/encoder_models/checkpoints/epoch=14-step=13995.ckpt"
+                "./cache/tuh_encoder.ckpt"
             )
 
             self.autoencoder.freeze()
@@ -27,7 +27,7 @@ class ConvEncoderTST(pl.LightningModule):
             self.autoencoder = LitAutoEncoder()
 
         self.tst = TSTransformerEncoderClassiregressor(
-            **tst_config.generate_model_params(), feat_dim=64, max_len=646
+            **tst_config.generate_model_params(), feat_dim=128, max_len=364
         )
 
         self.scorers = [BinaryAUROC(), CompetitionScore()]
@@ -141,7 +141,7 @@ def dataloader_factory(
     tst_config: PhysionetConfig,
     data_path: str = "./data",
     deterministic_split=False,
-    test_size=0.1,
+    test_size=0.2,
 ):
     pids = MetadataOnlyDataset(root_folder=data_path).patient_ids
 
@@ -164,12 +164,12 @@ def dataloader_factory(
 if __name__ == "__main__":
     train_dl, valid_dl = dataloader_factory(config_factory())
 
-    model = ConvEncoderTST(config_factory())
+    model = ConvEncoderTST(config_factory(), pretrained=True)
     checkpoint_saver = ModelCheckpoint(
         save_top_k=1,
         monitor="val_loss",
         mode="min",
-        dirpath="cache/checkpoints",
+        dirpath="cache/convEncoderTstCheckpoints",
     )
 
     trainer = pl.Trainer(
