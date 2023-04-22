@@ -13,15 +13,18 @@ from physionet2023.modeling.scoringUtil import CompetitionScore
 
 
 class ConvEncoderTST(pl.LightningModule):
-    def __init__(self, tst_config: PhysionetConfig, freeze=True) -> None:
+    def __init__(self, tst_config: PhysionetConfig, pretrained=True) -> None:
         super().__init__()
 
-        self.autoencoder = LitAutoEncoder.load_from_checkpoint(
-            "./cache/encoder_models/checkpoints/epoch=14-step=13995.ckpt"
-        )
+        if pretrained:
 
-        if freeze:
+            self.autoencoder = LitAutoEncoder.load_from_checkpoint(
+                "./cache/encoder_models/checkpoints/epoch=14-step=13995.ckpt"
+            )
+
             self.autoencoder.freeze()
+        else:
+            self.autoencoder = LitAutoEncoder()
 
         self.tst = TSTransformerEncoderClassiregressor(
             **tst_config.generate_model_params(), feat_dim=64, max_len=646
