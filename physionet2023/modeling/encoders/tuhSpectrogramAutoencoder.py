@@ -20,12 +20,12 @@ class LitAutoEncoder(pl.LightningModule):
             torch.nn.Conv2d(18, 32, 3, stride=2, padding=1),
             torch.nn.ReLU(),
             torch.nn.Conv2d(32, 64, 3, stride=2, padding=1),
-            # torch.nn.ReLU(),
-            # torch.nn.Conv2d(64, 128, 7),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(64, 128, 7),
         )
         self.decoder = torch.nn.Sequential(
-            # torch.nn.ConvTranspose2d(128, 32, 7),
-            # torch.nn.ReLU(),
+            torch.nn.ConvTranspose2d(128, 64, 7),
+            torch.nn.ReLU(),
             torch.nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1),
             torch.nn.ReLU(),
             torch.nn.ConvTranspose2d(32, 18, 3, stride=2, padding=(1, 2)),
@@ -66,7 +66,7 @@ class LitAutoEncoder(pl.LightningModule):
         self.valid_mse.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
         return optimizer
 
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     tuh_dl = torch.utils.data.DataLoader(
         tuh_ds,
         num_workers=config.cores_available,
-        batch_size=16,
+        batch_size=32,
         # Only pin memory if we have GPUs
         pin_memory=(config.gpus_available > 0),
     )
@@ -85,7 +85,7 @@ if __name__ == "__main__":
     physionet_dl = torch.utils.data.DataLoader(
         physionet_ds,
         num_workers=config.cores_available,
-        batch_size=16,
+        batch_size=32,
         # Only pin memory if we have GPUs
         pin_memory=(config.gpus_available > 0),
     )
@@ -95,14 +95,14 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         # limit_train_batches=100,
-        max_epochs=15,
+        max_epochs=500,
         logger=False,
         callbacks=[
             EarlyStopping(
                 monitor="val_loss",
                 mode="min",
                 verbose=True,
-                patience=3,
+                patience=10,
                 check_finite=False,
             ),
         ],
