@@ -3,7 +3,7 @@ import torch
 from mvtst.models.ts_transformer import TSTransformerEncoderClassiregressor
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.model_selection import train_test_split
-from torchmetrics.classification import BinaryAUROC
+from torchmetrics.classification import BinaryAUROC, BinaryF1Score
 
 from physionet2023 import *
 from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
@@ -30,7 +30,11 @@ class ConvEncoderTST(pl.LightningModule):
             **tst_config.generate_model_params(), feat_dim=128, max_len=364
         )
 
-        self.scorers = [BinaryAUROC(), CompetitionScore()]
+        self.scorers = [
+            BinaryAUROC().to("cuda"),
+            BinaryF1Score().to("cuda"),
+            CompetitionScore(),
+        ]
 
     def training_step(self, batch, batch_idx):
         x, y = batch
