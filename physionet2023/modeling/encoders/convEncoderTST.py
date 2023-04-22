@@ -1,7 +1,7 @@
 import pytorch_lightning as pl
 import torch
 from mvtst.models.ts_transformer import TSTransformerEncoderClassiregressor
-from pytorch_lightning.callbacks import EarlyStopping
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from sklearn.model_selection import train_test_split
 from torchmetrics.classification import BinaryAUROC
 
@@ -48,6 +48,24 @@ class ConvEncoderTST(pl.LightningModule):
 
         return loss
 
+    def test_step(self, batch, batch_idx):
+        X, y = batch
+        preds = self.forward(X)
+        loss = torch.nn.functional.binary_cross_entropy(preds, y)
+
+        for s in self.scorers:
+            s.update(preds, y)
+
+        return loss
+
+    def on_test_epoch_end(self):
+        test_competition_score = 0.0
+        for s in self.scorers:
+            final_score = s.compute()
+            self.log(f"Test {s.__class__.__name__}", final_score)
+
+        return test_competition_score
+
     def on_validation_epoch_end(self) -> None:
         print("\n\n")
 
@@ -69,7 +87,7 @@ class ConvEncoderTST(pl.LightningModule):
 
 def config_factory():
     problem_params = {
-        "lr": 1e-6,
+        "lr": 1e-7,
         "dropout": 0.5,
         "d_model_multiplier": 4,
         "num_layers": 2,
@@ -144,16 +162,24 @@ if __name__ == "__main__":
     model = ConvEncoderTST(config_factory())
 
     trainer = pl.Trainer(
-        max_epochs=15,
+        max_epochs=50,
         logger=False,
         callbacks=[
             EarlyStopping(
                 monitor="val_loss",
                 mode="min",
                 verbose=True,
-                patience=4,
+                patience=10,
                 check_finite=False,
             ),
+            ModelCheckpoint(
+                save_top_k=1,
+                monitor="val_loss",
+                mode="min",
+                dirpath="cache/checkpoints",
+            ),
         ],
+        enable_checkpointing=True,
     )
     trainer.fit(model=model, train_dataloaders=train_dl, val_dataloaders=valid_dl)
+    trainer.test(model=model, dataloaders=valid_dl)

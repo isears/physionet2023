@@ -2,7 +2,8 @@ import pytorch_lightning as pl
 import torch
 from mvtst.models import TSTConfig
 from mvtst.models.loss import NoFussCrossEntropyLoss
-from mvtst.models.ts_transformer import ConvTST, TSTransformerEncoderClassiregressor
+from mvtst.models.ts_transformer import (ConvTST,
+                                         TSTransformerEncoderClassiregressor)
 from pytorch_lightning.loggers import WandbLogger
 from sklearn.model_selection import train_test_split
 
@@ -27,17 +28,17 @@ def lightning_tst_factory(tst_config: TSTConfig, ds):
 # Need fn here so that identical configs can be generated when rebuilding the model in the competition test phase
 def config_factory():
     problem_params = {
-        "lr": 1e-5,
-        "dropout": 0.1,
-        "d_model_multiplier": 8,
-        "num_layers": 1,
-        "n_heads": 8,
-        "dim_feedforward": 256,
+        "lr": 1e-6,
+        "dropout": 0.5,
+        "d_model_multiplier": 4,
+        "num_layers": 2,
+        "n_heads": 4,
+        "dim_feedforward": 32,
         "pos_encoding": "learnable",
         "activation": "gelu",
         "norm": "LayerNorm",
         "optimizer_name": "AdamW",
-        "batch_size": 16,
+        "batch_size": 32,
     }
 
     tst_config = PhysionetConfig(
@@ -55,6 +56,7 @@ def single_dl_factory(
         patient_ids=pids,
         label_type=tst_config.label_type,
         preprocess=True,
+        last_only=True,
         # include_static=False,
         quality_cutoff=0.0,
         **ds_args,
@@ -120,8 +122,9 @@ def train_fn(data_path: str = "./data", log: bool = True, test=False):
         logger,
         enable_progress_bar=True,
         es_patience=5,
-        val_check_interval=0.1,
-        max_epochs=5,
+        # val_check_interval=0.1,
+        val_check_interval=1,
+        # max_epochs=5,
     )
 
     trainer.fit(
