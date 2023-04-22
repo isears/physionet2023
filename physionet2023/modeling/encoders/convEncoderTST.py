@@ -92,12 +92,12 @@ class ConvEncoderTST(pl.LightningModule):
 
 def config_factory():
     problem_params = {
-        "lr": 1e-7,
-        "dropout": 0.5,
-        "d_model_multiplier": 4,
-        "num_layers": 2,
-        "n_heads": 4,
-        "dim_feedforward": 32,
+        "lr": 1e-3,
+        "dropout": 0.1,
+        "d_model_multiplier": 8,
+        "num_layers": 3,
+        "n_heads": 16,
+        "dim_feedforward": 256,
         "pos_encoding": "learnable",
         "activation": "gelu",
         "norm": "LayerNorm",
@@ -120,7 +120,7 @@ def single_dl_factory(
         patient_ids=pids,
         label_type=tst_config.label_type,
         preprocess=True,
-        last_only=True,
+        # last_only=True,
         # include_static=False,
         quality_cutoff=0.0,
         **ds_args,
@@ -165,9 +165,15 @@ if __name__ == "__main__":
     train_dl, valid_dl = dataloader_factory(config_factory())
 
     model = ConvEncoderTST(config_factory())
+    checkpoint_saver = ModelCheckpoint(
+        save_top_k=1,
+        monitor="val_loss",
+        mode="min",
+        dirpath="cache/checkpoints",
+    )
 
     trainer = pl.Trainer(
-        max_epochs=50,
+        max_epochs=10,
         logger=False,
         callbacks=[
             EarlyStopping(
@@ -177,14 +183,12 @@ if __name__ == "__main__":
                 patience=10,
                 check_finite=False,
             ),
-            ModelCheckpoint(
-                save_top_k=1,
-                monitor="val_loss",
-                mode="min",
-                dirpath="cache/checkpoints",
-            ),
+            checkpoint_saver,
         ],
         enable_checkpointing=True,
+        val_check_interval=0.1,
     )
     trainer.fit(model=model, train_dataloaders=train_dl, val_dataloaders=valid_dl)
-    trainer.test(model=model, dataloaders=valid_dl)
+    trainer.test(
+        model=model, dataloaders=valid_dl, ckpt_path=checkpoint_saver.best_model_path
+    )

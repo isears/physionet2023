@@ -8,11 +8,13 @@ from sklearn.model_selection import KFold
 from physionet2023 import *
 from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
 from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling.encoders.convEncoderTST import (ConvEncoderTST,
-                                                            config_factory)
+from physionet2023.modeling.encoders.convEncoderTST import (
+    ConvEncoderTST,
+    config_factory,
+)
 
 
-def fold_generator(n_folds=5):
+def fold_generator(tst_config, n_folds=5):
     kf = KFold(n_folds, random_state=42, shuffle=True)
     pids = MetadataOnlyDataset().patient_ids
 
@@ -25,7 +27,7 @@ def fold_generator(n_folds=5):
                 patient_ids=group,
                 label_type=LabelType.SINGLECLASS,
                 preprocess=True,
-                last_only=True,
+                last_only=False,
                 quality_cutoff=0.0,
             )
             for group in [train_pids, test_pids]
@@ -33,7 +35,10 @@ def fold_generator(n_folds=5):
 
         train_dl, test_dl = tuple(
             torch.utils.data.DataLoader(
-                ds, num_workers=config.cores_available, batch_size=32, pin_memory=True
+                ds,
+                num_workers=config.cores_available,
+                batch_size=tst_config.batch_size,
+                pin_memory=True,
             )
             for ds in [train_ds, test_ds]
         )
@@ -57,10 +62,17 @@ if __name__ == "__main__":
         pretrained = True
 
     cv_results = {}
+    tst_config = config_factory()
 
-    for fidx, (train_dl, test_dl) in enumerate(fold_generator()):
+    for fidx, (train_dl, test_dl) in enumerate(fold_generator(tst_config)):
         print(f"[+] Starting fold {fidx}")
-        model = ConvEncoderTST(config_factory(), pretrained=pretrained)
+        model = ConvEncoderTST(tst_config, pretrained=pretrained)
+        checkpoint_saver = ModelCheckpoint(
+            save_top_k=1,
+            monitor="val_loss",
+            mode="min",
+            dirpath="cache/checkpoints",
+        )
 
         trainer = pl.Trainer(
             max_epochs=100,
@@ -73,17 +85,15 @@ if __name__ == "__main__":
                     patience=10,
                     check_finite=False,
                 ),
-                ModelCheckpoint(
-                    save_top_k=1,
-                    monitor="val_loss",
-                    mode="min",
-                    dirpath="cache/checkpoints",
-                ),
+                checkpoint_saver,
             ],
             enable_checkpointing=True,
+            val_check_interval=0.1,
         )
         trainer.fit(model=model, train_dataloaders=train_dl, val_dataloaders=test_dl)
-        results = trainer.test(model=model, dataloaders=test_dl)
+        results = trainer.test(
+            model=model, dataloaders=test_dl, ckpt_path=checkpoint_saver.best_model_path
+        )
 
         for k, v in results[0].items():
             if not k in cv_results:
