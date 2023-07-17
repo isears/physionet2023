@@ -5,9 +5,13 @@ from sklearn.model_selection import train_test_split
 from torchmetrics.classification import BinaryAUROC
 
 from physionet2023 import LabelType, config
-from physionet2023.dataProcessing.patientDatasets import AvgSpectralDensityDataset
+from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
+from physionet2023.dataProcessing.recordingDatasets import (
+    RecordingDataset,
+    SpectrogramDataset,
+)
+from physionet2023.modeling.encoders.tuhSpectrogramAutoencoder import LitAutoEncoder
 from physionet2023.modeling.scoringUtil import CompetitionScore
-from physionet2023.modeling.tuhAutoencoder import LitAutoEncoder
 
 
 class encoderClassifier(pl.LightningModule):
@@ -15,24 +19,24 @@ class encoderClassifier(pl.LightningModule):
         super().__init__()
 
         self.autoencoder = LitAutoEncoder.load_from_checkpoint(
-            "./cache/encoder_models/checkpoints/epoch=4-step=500.ckpt"
+            "./cache/encoder_models/checkpoints/epoch=14-step=13995.ckpt"
         )
         self.autoencoder.freeze()
 
         # TODO: need to reduce reliance on magic numbers here
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(9, 9),
+            torch.nn.Linear(41344, 1000),
             torch.nn.ReLU(),
-            torch.nn.Linear(9, n_classes),
+            torch.nn.Linear(1000, 100),
+            torch.nn.ReLU(),
+            torch.nn.Linear(100, n_classes),
             torch.nn.Sigmoid(),
         )
 
         self.scorers = [CompetitionScore(), BinaryAUROC()]
 
     def training_step(self, batch, batch_idx):
-        # TODO: for now just using first EEG channel (still)
         x, y = batch
-        x = x[:, 0, :]
         preds = self.forward(x)
         loss = torch.nn.functional.binary_cross_entropy(preds, y)
         self.log("train_loss", loss)
@@ -43,9 +47,7 @@ class encoderClassifier(pl.LightningModule):
         pass
 
     def validation_step(self, batch, batch_idx):
-        # TODO: for now just using first EEG channel
         x, y = batch
-        x = x[:, 0, :]
         preds = self.forward(x)
         loss = torch.nn.functional.binary_cross_entropy(preds, y)
         for s in self.scorers:
@@ -67,15 +69,17 @@ class encoderClassifier(pl.LightningModule):
 
     def forward(self, X):
         encoded = self.autoencoder.encoder(X)
-        preds = self.fc(encoded)
+        preds = self.fc(encoded.flatten(1))
         return preds
 
 
 def single_dl_factory(pids: list, data_path: str = "./data", **ds_args):
-    ds = AvgSpectralDensityDataset(
+    ds = SpectrogramDataset(
         root_folder=data_path,
         patient_ids=pids,
         label_type=LabelType.SINGLECLASS,
+        preprocess=True,
+        last_only=True,
         **ds_args,
     )
 
@@ -95,11 +99,11 @@ def dataloader_factory(
     deterministic_split=False,
     test_size=0.1,
 ):
-    pids = AvgSpectralDensityDataset(root_folder=data_path).patient_ids
+    pids = MetadataOnlyDataset(root_folder=data_path).patient_ids
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=42, test_size=test_size
+            pids, random_state=1, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)

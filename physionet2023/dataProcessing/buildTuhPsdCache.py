@@ -2,33 +2,46 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from physionet2023.dataProcessing.TuhDatasets import TuhPatientDataset
+from physionet2023 import config
+from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
+from physionet2023.dataProcessing.TuhDatasets import TuhBestRecordingDataset
 
 if __name__ == "__main__":
-    ds = TuhPatientDataset()
-    all_x = list()
+    ds = TuhBestRecordingDataset()
 
-    # max = 4  # TODO: debug only
-    for idx, patient_path in enumerate(tqdm(ds.patient_paths)):
-        patient_id = patient_path.split("/")[-1]
+    dl = torch.utils.data.DataLoader(
+        ds,
+        num_workers=config.cores_available,
+        batch_size=1,
+    )
 
-        try:
-            X = ds[idx]
-            torch.save(X, f"cache/tuh_cache/{patient_id}.pt")
-            all_x.append(X)
-        except Exception as e:
-            print(f"Error encountered with {patient_id}, skipping...")
+    total_spectrograms = 0
+    total_patients = len(ds.patient_paths)
 
-        # if idx == max:
-        #     break
+    for idx, edf in enumerate(tqdm(dl, total=len(ds.patient_paths))):
+        this_edf = edf[0]  # Unwrap batch stack
 
-    stacked_x = torch.stack(all_x, dim=-1)
+        # TODO: ds will return float('nan') if no suitable data
+        # could think of a better way to handle this
+        if this_edf.shape == torch.Size([]):
+            continue
 
-    means = torch.mean(stacked_x, dim=-1)
-    stds = torch.std(stacked_x, dim=-1)
+        assert this_edf.shape[-1] >= 30000
 
-    print(means)
-    print(stds)
+        overflow = this_edf.shape[-1] - 30000
+        left_margin = int(overflow / 2)
+        right_margin = this_edf.shape[-1] - left_margin
 
-    torch.save(means, "cache/tuh_cache/_means.pt")
-    torch.save(stds, "cache/tuh_cache/_stds.pt")
+        this_edf = this_edf[:, left_margin:right_margin]
+
+        assert this_edf.shape[-1] == 30000
+
+        spectrogram = SpectrogramDataset._to_spectrogram(this_edf)
+
+        assert spectrogram.shape == torch.Size([18, 75, 133])
+
+        total_spectrograms += 1
+        torch.save(spectrogram, f"./cache/tuh_cache/{idx:05d}.pt")
+
+    print(f"Saved {total_spectrograms} out of {total_patients} possible")
+    print(f"{total_spectrograms / total_patients * 100} % success rate")

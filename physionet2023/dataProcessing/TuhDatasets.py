@@ -4,6 +4,8 @@ import mne
 import numpy as np
 import torch
 
+from physionet2023.dataProcessing.recordingDatasets import preprocess_signal
+
 
 class TuhPatientDataset(torch.utils.data.Dataset):
     # PIDs with insufficient channels to reconstruct the physionet bipolar channels
@@ -141,14 +143,9 @@ class TuhPatientDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.patient_paths)
 
-    def _get_physionet_channels(self, index: int):
-        # TODO: just take first edf for now but later could go for longest and / or highest-quality
-        all_possible_edfs = glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
-
-        assert len(all_possible_edfs) > 0
-
+    def _get_physionet_channels(self, edf_path: str):
         edf_obj = mne.io.read_raw_edf(
-            all_possible_edfs[0],
+            edf_path,
             verbose=False,
             preload=True,
             include=(
@@ -182,42 +179,13 @@ class TuhPatientDataset(torch.utils.data.Dataset):
             )
         else:
             raise ValueError(
-                f"Recording did not have epxected channels at path: {self.patient_paths[index]}"
+                f"Recording did not have epxected channels at path: {edf_path}"
             )
 
         eeg_waveform = raw_bipolar.get_data()
         assert eeg_waveform.shape[0] == len(self.channel_names)
 
         return eeg_waveform, edf_obj.info["sfreq"]
-
-    def __getitem__(self, index: int):
-        eeg_waveform, sfreq = self._get_physionet_channels(index)
-
-        sd, _ = mne.time_frequency.psd_array_welch(
-            eeg_waveform,
-            sfreq=sfreq,
-            fmin=0.5,
-            fmax=30,
-            verbose=False,
-            n_fft=int(sfreq * self.fft_coeff),
-        )
-
-        # X = np.mean(sd, axis=0)
-
-        return torch.tensor(sd)
-
-    def get_channels(self, index: int):
-        all_possible_edfs = glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
-
-        assert len(all_possible_edfs) > 0
-
-        edf_obj = mne.io.read_raw_edf(
-            all_possible_edfs[0], verbose=False, infer_types=True
-        )
-
-        channels = edf_obj.ch_names
-
-        return channels
 
     def _get_edf_obj(self, index: int):
         # TODO: just take first edf for now but later could go for longest and / or highest-quality
@@ -228,27 +196,53 @@ class TuhPatientDataset(torch.utils.data.Dataset):
         edf_obj = mne.io.read_raw_edf(all_possible_edfs[0], verbose=False)
         return edf_obj
 
+    def __getitem__(self, index: int):
+        # TODO: just take first edf for now but later could go for longest and / or highest-quality
+        all_possible_edfs = glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
+        assert len(all_possible_edfs) > 0
+        eeg_waveform, sfreq = self._get_physionet_channels(all_possible_edfs[0])
+
+        processed_signal = preprocess_signal(eeg_waveform, original_rate=int(sfreq))
+
+        return torch.tensor(processed_signal)
+
+
+class TuhBestRecordingDataset(TuhPatientDataset):
+    # NOTE: output could be none if no signal satisfies requirements
+    def __getitem__(self, index: int):
+
+        try:
+            all_possible_edfs = [
+                self._get_physionet_channels(p)
+                for p in glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
+            ]
+
+            for edf, sfreq in all_possible_edfs:
+                # Need at least as much recording data as physionet
+                if edf.shape[-1] / sfreq >= (30000 / 100):
+                    return preprocess_signal(edf, original_rate=int(sfreq))
+
+            else:
+                return float("nan")
+        except Exception as e:
+            print(f"Warning, caught exception: {e} (index {index})")
+            return float("nan")
+
 
 class TuhPreprocessedDataset(torch.utils.data.Dataset):
+
+    seq_len = 30000
+
     def __init__(self, path="cache/tuh_cache") -> None:
         super().__init__()
 
         self.fnames = [f for f in glob.glob(f"{path}/*.pt") if not f.startswith("_")]
-        self.means = torch.load(f"{path}/_means.pt")
-        self.stds = torch.load(f"{path}/_stds.pt")
 
     def __len__(self):
         return len(self.fnames)
 
     def __getitem__(self, index: int):
         data = torch.load(self.fnames[index])
-
-        # data = (data - self.means) / self.stds
-
-        data = torch.log10(data)
-
-        # TODO: to match physionet dataset
-        data = (data - torch.mean(data)) / torch.std(data)
 
         return data.float()
 

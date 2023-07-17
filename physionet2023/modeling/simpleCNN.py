@@ -2,40 +2,43 @@ import torch
 from mvtst.models import TSTConfig
 from sklearn.model_selection import train_test_split
 
-from physionet2023 import config
+from physionet2023 import LabelType, PhysionetConfig, config
 from physionet2023.dataProcessing.datasets import PatientDataset
-from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
-from physionet2023.modeling import GenericPlRegressor, GenericPlTrainer, GenericPlTst
+from physionet2023.dataProcessing.recordingDatasets import (
+    RecordingDataset,
+    SpectrogramDataset,
+)
+from physionet2023.modeling import GenericPlTrainer, GenericPlTst
 
 
-class SpectrogramCNN(torch.nn.Module):
+class SimpleCNN(torch.nn.Module):
     def __init__(self, n_channels) -> None:
         super().__init__()
 
-        self.conv1 = torch.nn.Conv2d(
-            in_channels=n_channels, out_channels=20, kernel_size=(5, 5)
+        self.conv1 = torch.nn.Conv1d(
+            in_channels=n_channels, out_channels=n_channels, kernel_size=5, dilation=9
         )
         self.relu1 = torch.nn.ReLU()
-        self.maxpool1 = torch.nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
-        self.conv2 = torch.nn.Conv2d(
-            in_channels=20, out_channels=50, kernel_size=(5, 5)
+        self.maxpool1 = torch.nn.MaxPool1d(kernel_size=5)
+        self.conv2 = torch.nn.Conv1d(
+            in_channels=n_channels, out_channels=n_channels, kernel_size=5
         )
         self.relu2 = torch.nn.ReLU()
-        self.maxpool2 = torch.nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2))
+        self.maxpool2 = torch.nn.MaxPool1d(kernel_size=5)
 
         # TODO: this got hard-coded but maybe shouldn't be
-        self.fc1 = torch.nn.Linear(in_features=44800, out_features=500)
+        self.fc1 = torch.nn.Linear(in_features=21546, out_features=1000)
         self.relu3 = torch.nn.ReLU()
-        self.fc2 = torch.nn.Linear(in_features=500, out_features=1)
+        self.fc2 = torch.nn.Linear(in_features=1000, out_features=1)
 
     def forward(self, x):
         x = self.conv1(x)
         x = self.relu1(x)
         x = self.maxpool1(x)
 
-        # x = self.conv2(x)
-        # x = self.relu2(x)
-        # x = self.maxpool2(x)
+        x = self.conv2(x)
+        x = self.relu2(x)
+        x = self.maxpool2(x)
 
         x = torch.flatten(x, 1)
         x = self.fc1(x)
@@ -45,9 +48,9 @@ class SpectrogramCNN(torch.nn.Module):
 
 
 def model_factory(tst_config, ds):
-    cnn = SpectrogramCNN(len(ds.channels))
+    cnn = SimpleCNN(len(ds.channels))
 
-    lightning_wrapper = GenericPlRegressor(cnn, tst_config)
+    lightning_wrapper = GenericPlTst(cnn, tst_config)
 
     return lightning_wrapper
 
@@ -68,20 +71,24 @@ def config_factory():
         "batch_size": 64,
     }
 
-    tst_config = TSTConfig(save_path="SpectrogramCNN", **problem_params)
+    tst_config = PhysionetConfig(
+        save_path="SpectrogramCNN", label_type=LabelType.SINGLECLASS, **problem_params
+    )
 
     return tst_config
 
 
 def single_dl_factory(
-    tst_config: TSTConfig, pids: list, data_path: str = None, **ds_args
+    tst_config: PhysionetConfig, pids: list, data_path: str = None, **ds_args
 ):
-    ds = SpectrogramDataset(
+    ds = RecordingDataset(
         root_folder=data_path,
         patient_ids=pids,
-        for_classification=False,
-        normalize=True,
-        **ds_args
+        label_type=tst_config.label_type,
+        preprocess=True,
+        # include_static=False,
+        quality_cutoff=0.0,
+        **ds_args,
     )
 
     dl = torch.utils.data.DataLoader(

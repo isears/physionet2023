@@ -26,7 +26,7 @@ def objective(trial: optuna.Trial) -> float:
 
     # Parameters to tune:
     trial.suggest_float("lr", 1e-7, 0.1, log=True)
-    trial.suggest_float("dropout", 0.4, 0.9)
+    trial.suggest_float("dropout", 0.1, 0.6)
     trial.suggest_categorical("d_model_multiplier", [1, 2, 4, 8, 16, 32, 64])
     trial.suggest_int("num_layers", 1, 15)
     trial.suggest_categorical("n_heads", [4, 8, 16, 32, 64])
