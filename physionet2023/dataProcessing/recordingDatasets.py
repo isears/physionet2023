@@ -68,6 +68,7 @@ class RecordingDataset(PatientDataset):
                 for pid in self.patient_ids
             }
 
+
         if last_only:
             recordings_dict = {
                 pid: [self._load_recording_metadata(pid)["Record"].to_list()[-1]]
@@ -136,6 +137,7 @@ class FftDownsamplingDataset(RecordingDataset):
         return X_fft_downsampled, static_data, y
 
 
+
 class SpectrogramDataset(RecordingDataset):
     # Cutoff frequencies for spectrogram
     f_min = 0.5
@@ -152,9 +154,14 @@ class SpectrogramDataset(RecordingDataset):
             **super_kwargs,
         )
 
-        sample_X, _ = self.__getitem__(0)
-        self.dims = (sample_X.shape[1], sample_X.shape[2])
-        self.sample_len = self.dims[1]  # Mostly for backwards compatibility
+        try:
+            sample_X, _ = self.__getitem__(0)
+            self.dims = (sample_X.shape[1], sample_X.shape[2])
+            self.sample_len = self.dims[1]  # Mostly for backwards compatibility
+        except IndexError:
+            # dataset is empty and nothing matters anyway
+            self.dims = (75, 133)
+            self.sample_len = self.dims[1]
 
     @classmethod
     def _to_spectrogram(cls, eeg_data):
