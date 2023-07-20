@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
         spectrogram = SpectrogramDataset._to_spectrogram(this_edf)
 
-        assert spectrogram.shape == torch.Size([18, 75, 133])
+        assert spectrogram.shape == torch.Size([4, 75, 133])
 
         total_spectrograms += 1
         torch.save(spectrogram, f"./cache/tuh_cache/{idx:05d}.pt")

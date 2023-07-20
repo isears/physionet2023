@@ -1,10 +1,12 @@
 import glob
 
+import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import torch
 
-from physionet2023.dataProcessing.recordingDatasets import preprocess_signal
+from helper_code import preprocess_data
+from physionet2023.dataProcessing.patientDatasets import SpectrogramDataset
 
 
 class TuhPatientDataset(torch.utils.data.Dataset):
@@ -116,6 +118,17 @@ class TuhPatientDataset(torch.utils.data.Dataset):
         "Cz-Pz",
     ]
 
+    used_channels = [
+        "EEG F3-REF",
+        "EEG F3-LE",
+        "EEG F4-REF",
+        "EEG F4-LE",
+        "EEG P3-REF",
+        "EEG P3-LE",
+        "EEG P4-REF",
+        "EEG P4-LE",
+    ]
+
     def __init__(self, tuh_dir="./tuh/edf", fft_coeff=10) -> None:
         super().__init__()
         self.root_dir = tuh_dir
@@ -145,45 +158,12 @@ class TuhPatientDataset(torch.utils.data.Dataset):
 
     def _get_physionet_channels(self, edf_path: str):
         edf_obj = mne.io.read_raw_edf(
-            edf_path,
-            verbose=False,
-            preload=True,
-            include=(
-                self.le_anodes + self.le_cathodes + self.ref_anodes + self.ref_cathodes
-            ),
+            edf_path, verbose=False, preload=True, include=self.used_channels
         )
-
-        # Re-reference to match the competition bipolar electrode setup:
-        # https://mne.tools/stable/auto_tutorials/preprocessing/55_setting_eeg_reference.html
-        channels = edf_obj.ch_names
-
-        if all(
-            [ref_chan in channels for ref_chan in (self.le_anodes + self.le_cathodes)]
-        ):
-            raw_bipolar = mne.set_bipolar_reference(
-                edf_obj,
-                anode=self.le_anodes,
-                cathode=self.le_cathodes,
-                ch_name=self.channel_names,
-                verbose=False,
-            )
-        elif all(
-            [ref_chan in channels for ref_chan in (self.ref_anodes + self.ref_cathodes)]
-        ):
-            raw_bipolar = mne.set_bipolar_reference(
-                edf_obj,
-                anode=self.ref_anodes,
-                cathode=self.ref_cathodes,
-                ch_name=self.channel_names,
-                verbose=False,
-            )
-        else:
-            raise ValueError(
-                f"Recording did not have epxected channels at path: {edf_path}"
-            )
-
-        eeg_waveform = raw_bipolar.get_data()
-        assert eeg_waveform.shape[0] == len(self.channel_names)
+        eeg_waveform = edf_obj.get_data()
+        assert (
+            eeg_waveform.shape[0] == 4
+        ), f"Actual channels {eeg_waveform.shape[0]} != expected {4}"
 
         return eeg_waveform, edf_obj.info["sfreq"]
 
@@ -191,7 +171,7 @@ class TuhPatientDataset(torch.utils.data.Dataset):
         # TODO: just take first edf for now but later could go for longest and / or highest-quality
         all_possible_edfs = glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
 
-        assert len(all_possible_edfs) > 0
+        assert len(all_possible_edfs) > 0, "0 available edfs"
 
         edf_obj = mne.io.read_raw_edf(all_possible_edfs[0], verbose=False)
         return edf_obj
@@ -199,10 +179,13 @@ class TuhPatientDataset(torch.utils.data.Dataset):
     def __getitem__(self, index: int):
         # TODO: just take first edf for now but later could go for longest and / or highest-quality
         all_possible_edfs = glob.glob(f"{self.patient_paths[index]}/*/*/*.edf")
-        assert len(all_possible_edfs) > 0
+        assert len(all_possible_edfs) > 0, "0 available EDFs"
         eeg_waveform, sfreq = self._get_physionet_channels(all_possible_edfs[0])
 
-        processed_signal = preprocess_signal(eeg_waveform, original_rate=int(sfreq))
+        # TODO: utility frequency of 50 Hz is just an educated guess
+        processed_signal = preprocess_data(
+            eeg_waveform, sampling_frequency=sfreq, utility_frequency=50.0
+        )
 
         return torch.tensor(processed_signal)
 
@@ -219,8 +202,13 @@ class TuhBestRecordingDataset(TuhPatientDataset):
 
             for edf, sfreq in all_possible_edfs:
                 # Need at least as much recording data as physionet
-                if edf.shape[-1] / sfreq >= (30000 / 100):
-                    return preprocess_signal(edf, original_rate=int(sfreq))
+                if (edf.shape[-1] / sfreq) >= (5 * 60):
+                    # TODO: utility frequency is just a guess
+                    data, f = preprocess_data(
+                        edf, sampling_frequency=sfreq, utility_frequency=50.0
+                    )
+
+                    return data
 
             else:
                 return float("nan")
@@ -247,7 +235,18 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
         return data.float()
 
 
-if __name__ == "__main__":
+def draw_sample_spectrogram(idx: int):
     ds = TuhPreprocessedDataset()
-    print(len(ds))
-    a = ds[0]
+    X = ds[idx]
+    f = np.linspace(0.5, 30, X.shape[1])
+    t = np.linspace(0, 5 * 60, X.shape[2])
+
+    plt.ylabel("f [Hz]")
+    plt.xlabel("t [sec]")
+    plt.pcolormesh(t, f, X[0])
+
+    plt.savefig("results/sample_tuh_spectrogram.png")
+
+
+if __name__ == "__main__":
+    draw_sample_spectrogram(960)

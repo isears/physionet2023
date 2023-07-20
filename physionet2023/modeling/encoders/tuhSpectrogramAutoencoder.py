@@ -4,10 +4,12 @@ import torchmetrics
 from pytorch_lightning.callbacks import EarlyStopping
 
 from physionet2023 import config
-from physionet2023.dataProcessing.recordingDatasets import (
-    RecordingDataset,
-    SpectrogramDataset,
-)
+
+# from physionet2023.dataProcessing.recordingDatasets import (
+#     RecordingDataset,
+#     SpectrogramDataset,
+# )
+from physionet2023.dataProcessing.patientDatasets import SpectrogramDataset
 from physionet2023.dataProcessing.TuhDatasets import TuhPreprocessedDataset
 
 
@@ -72,7 +74,7 @@ class LitAutoEncoder(pl.LightningModule):
 
 if __name__ == "__main__":
     tuh_ds = TuhPreprocessedDataset()
-    physionet_ds = SpectrogramDataset(preprocess=True, last_only=True)
+    physionet_ds = SpectrogramDataset()
 
     tuh_dl = torch.utils.data.DataLoader(
         tuh_ds,
