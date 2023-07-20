@@ -1,3 +1,4 @@
+import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import torch
@@ -241,10 +242,26 @@ class SpectrogramDataset(PatientDataset):
         return torch.tensor(X).float(), self._get_label(patient_id)
 
 
-if __name__ == "__main__":
+def draw_sample_spectrogram(idx: int):
     ds = SpectrogramDataset()
+    X, y = ds[idx]
+    f = np.linspace(ds.f_min, ds.f_max, ds.dims[0])
+    t = np.linspace(0, ds.signal_length.total_seconds(), ds.dims[1])
 
-    for X, y in ds:
-        # print(X.shape)
-        # print(y)
-        pass
+    plt.ylabel("f [Hz]")
+    plt.xlabel("t [sec]")
+    plt.pcolormesh(t, f, X[0])
+
+    plt.savefig("results/sample_spectrogram.png")
+
+
+if __name__ == "__main__":
+    import sys
+
+    draw_sample_spectrogram(int(sys.argv[1]))
+    # ds = SpectrogramDataset()
+
+    # for X, y in ds:
+    #     # print(X.shape)
+    #     # print(y)
+    #     pass
