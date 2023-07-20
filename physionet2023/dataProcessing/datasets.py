@@ -1,3 +1,4 @@
+import datetime
 import os.path
 import random
 from typing import Literal
@@ -14,24 +15,28 @@ from physionet2023 import LabelType, config
 
 class PatientDataset(torch.utils.data.Dataset):
     channels = [
-        "Fp1-F7",
-        "F7-T3",
-        "T3-T5",
-        "T5-O1",
-        "Fp2-F8",
-        "F8-T4",
-        "T4-T6",
-        "T6-O2",
-        "Fp1-F3",
-        "F3-C3",
-        "C3-P3",
-        "P3-O1",
-        "Fp2-F4",
-        "F4-C4",
-        "C4-P4",
-        "P4-O2",
-        "Fz-Cz",
-        "Cz-Pz",
+        "Fp1",
+        "Fp2",
+        "F7",
+        "F8",
+        "F3",
+        "F4",
+        "T3",
+        "T4",
+        "C3",
+        "C4",
+        "T5",
+        "T6",
+        "P3",
+        "P4",
+        "O1",
+        "O2",
+        "Fz",
+        "Cz",
+        "Pz",
+        "Fpz",
+        "Oz",
+        "F9",
     ]
 
     static_features = {
@@ -44,9 +49,8 @@ class PatientDataset(torch.utils.data.Dataset):
         "TTM": lambda x: float(x),
     }
 
-    full_record_len = 30000
-
-    sampling_frequency = 100.0
+    signal_length = datetime.timedelta(seconds=300)
+    sampling_frequency = 128.0
 
     def __init__(
         self,
@@ -98,6 +102,74 @@ class PatientDataset(torch.utils.data.Dataset):
 
         return patient_metadata
 
+    def _load_recording_metadata(self, patient_id):
+        with open(f"{self.root_folder}/{patient_id}/RECORDS", "r") as f:
+            records = [r.strip() for r in f.readlines() if "EEG" in r]
+
+        collected_metadata = {
+            "name": list(),
+            "stime": list(),
+            "etime": list(),
+            "utility_freq": list(),
+        }
+
+        collected_metadata.update({c: list() for c in self.channels})
+
+        for r in records:
+            with open(f"{self.root_folder}/{patient_id}/{r}.hea", "r") as f:
+                valid_channels = list()
+
+                collected_metadata["name"].append(r)
+
+                for l in f.readlines():
+
+                    if l.startswith("#Utility frequency:"):
+                        collected_metadata["utility_freq"].append(int(l.split(":")[-1]))
+                    elif l.startswith("#Start time:"):
+                        hours = int(l.split(":")[1])
+                        minutes = int(l.split(":")[2])
+                        seconds = int(l.split(":")[3])
+                        collected_metadata["stime"].append(
+                            datetime.timedelta(
+                                hours=hours, minutes=minutes, seconds=seconds
+                            )
+                        )
+                    elif l.startswith("#End time:"):
+                        hours = int(l.split(":")[1])
+                        minutes = int(l.split(":")[2])
+                        seconds = int(l.split(":")[3])
+                        collected_metadata["etime"].append(
+                            datetime.timedelta(
+                                hours=hours, minutes=minutes, seconds=seconds
+                            )
+                        )
+                    elif len(l.split()) == 9:  # channel metadata
+                        channel = l.split()[-1]
+                        # metadatas = [
+                        #     int(l.split()[-5]),
+                        #     int(l.split()[-4]),
+                        #     int(l.split()[-3]),
+                        #     int(l.split()[-2]),
+                        # ]
+
+                        if int(l.split()[-5]) != 0:
+                            valid_channels.append(channel)
+
+                for c in self.channels:
+                    if c in valid_channels:
+                        collected_metadata[c].append(True)
+                    else:
+                        collected_metadata[c].append(False)
+
+        for k, v in collected_metadata.items():
+            assert len(v) == len(records)
+
+        out = pd.DataFrame(data=collected_metadata)
+
+        out["length"] = out["etime"] - out["stime"]
+
+        return out
+
     def __len__(self):
         return len(self.patient_ids)
 
@@ -106,15 +178,9 @@ class PatientDataset(torch.utils.data.Dataset):
 
         patient_metadata = self._load_patient_metadata(patient_id)
 
-        with open(f"{self.root_folder}/{patient_id}/RECORDS", "r") as f:
-            records = [r.strip() for r in f.readlines() if "ECG" not in r]
+        recording_metadata = self._load_recording_metadata(patient_id)
 
-        # Load recordings.
-        # recordings = [
-        #     load_recording_data(f"{self.root_folder}/{patient_id}/{r}") for r in records
-        # ]
-
-        return patient_metadata, records
+        return patient_metadata, recording_metadata
 
     def _get_label(self, patient_id: str):
         if self.label_type == LabelType.DUMMY:

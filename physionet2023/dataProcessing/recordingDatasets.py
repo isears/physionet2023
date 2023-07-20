@@ -68,7 +68,6 @@ class RecordingDataset(PatientDataset):
                 for pid in self.patient_ids
             }
 
-
         if last_only:
             recordings_dict = {
                 pid: [self._load_recording_metadata(pid)["Record"].to_list()[-1]]
@@ -135,7 +134,6 @@ class FftDownsamplingDataset(RecordingDataset):
         assert X_fft_downsampled.shape[-1] == self.sample_len
 
         return X_fft_downsampled, static_data, y
-
 
 
 class SpectrogramDataset(RecordingDataset):

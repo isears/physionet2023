@@ -3,6 +3,12 @@ import numpy as np
 import torch
 from scipy.signal import spectrogram
 
+from helper_code import (
+    get_utility_frequency,
+    load_recording_data,
+    preprocess_data,
+    reduce_channels,
+)
 from physionet2023.dataProcessing.datasets import PatientDataset
 
 
@@ -144,22 +150,75 @@ class SpectrogramDataset(PatientDataset):
         self.f_min = f_min
         self.f_max = f_max
 
+        self.used_channels = ["F3", "P3", "F4", "P4"]
+
         sample_X, _ = self.__getitem__(0)
         self.dims = (sample_X.shape[1], sample_X.shape[2])
         self.sample_len = self.dims[1]  # Mostly for backwards compatibility
 
     def __getitem__(self, index: int):
+        patient_metadata, recording_metadata = super().__getitem__(index)
         patient_id = self.patient_ids[index]
 
-        # TODO: for now just get last recording
-        recording_metadata = self._load_recording_metadata(patient_id)
-        recording_id = recording_metadata.iloc[-1]["Record"]
-        recording_data = self._load_single_recording(patient_id, recording_id)
+        qualified_records = recording_metadata[
+            (recording_metadata[self.used_channels].all(axis=1))
+            & (recording_metadata["length"] >= self.signal_length)
+        ]
+
+        if len(qualified_records) == 0:  # Can't always get what you want
+            qualified_records = recording_metadata[
+                (recording_metadata[self.used_channels].any(axis=1))
+                & (recording_metadata["length"] >= self.signal_length)
+            ]
+
+        if len(qualified_records) == 0:
+            print(f"[Warning] no qualified records found, returning zero sepctrogram")
+            return torch.zeros(self.dims).float(), self._get_label(patient_id)
+
+        selected_record = qualified_records[
+            qualified_records.etime == qualified_records.etime.max()
+        ]["name"].item()
+
+        recording_location = f"{self.root_folder}/{patient_id}/{selected_record}"
+        recording_data, channels, sampling_frequency = load_recording_data(
+            recording_location
+        )
+
+        utility_frequency = get_utility_frequency(recording_location + ".hea")
+
+        # Fix channels, if necessary
+        if all(channel in channels for channel in self.used_channels):
+            recording_data, channels = reduce_channels(
+                recording_data, channels, self.used_channels
+            )
+            recording_data, sampling_frequency = preprocess_data(
+                recording_data, sampling_frequency, utility_frequency
+            )
+
+        else:
+            print(f"[Chan Warn] Desired channels not available!")
+
+        if sampling_frequency != self.sampling_frequency:
+            print(
+                f"[Freq Warn] {selected_record} f of {sampling_frequency} != {self.sampling_frequency}"
+            )
+
+        recording_length = recording_data.shape[-1] / sampling_frequency
+
+        # Take 5 min from the middle of the recording
+        excess_data = recording_data.shape[-1] - (
+            self.signal_length.total_seconds() * sampling_frequency
+        )
+        left_margin = int(np.ceil(excess_data / 2))
+        right_margin = int(recording_data.shape[-1] - np.floor(excess_data / 2))
+        trimmed_data = recording_data[:, left_margin:right_margin]
+
+        # assert (trimmed_data.shape[-1] / sampling_frequency) == (60 * 5)
 
         spectrograms = list()
 
-        for channel_idx in range(0, recording_data.shape[0]):
-            f, t, s = spectrogram(recording_data[channel_idx, :], 100.0)
+        for channel_idx in range(0, trimmed_data.shape[0]):
+            f, t, s = spectrogram(trimmed_data[channel_idx, :], sampling_frequency)
             freq_filter = np.logical_and(f > self.f_min, f < self.f_max)
             s = s[freq_filter]
             f = f[freq_filter]
@@ -173,7 +232,11 @@ class SpectrogramDataset(PatientDataset):
         X = np.stack(spectrograms, axis=0)
 
         # deal with -inf
-        X[X == -np.inf] = X[X != -np.inf].min()
+        if (X == -np.inf).all():
+            print(f"[Allzero Warn] {selected_record} random sample has no data")
+            X = np.zeros_like(X)
+        elif (X == -np.inf).any():
+            X[X == -np.inf] = X[X != -np.inf].min()
 
         return torch.tensor(X).float(), self._get_label(patient_id)
 
@@ -182,5 +245,6 @@ if __name__ == "__main__":
     ds = SpectrogramDataset()
 
     for X, y in ds:
-        print(X)
-        break
+        # print(X.shape)
+        # print(y)
+        pass
