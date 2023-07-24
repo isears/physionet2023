@@ -162,11 +162,11 @@ class SpectrogramDataset(RecordingDataset):
             self.sample_len = self.dims[1]
 
     @classmethod
-    def _to_spectrogram(cls, eeg_data):
+    def _to_spectrogram(cls, eeg_data, base_freq=128.0):
         spectrograms = list()
 
         for channel_idx in range(0, eeg_data.shape[0]):
-            f, t, s = spectrogram(eeg_data[channel_idx, :], 100.0)
+            f, t, s = spectrogram(eeg_data[channel_idx, :], base_freq)
             freq_filter = np.logical_and(f > cls.f_min, f < cls.f_max)
             s = s[freq_filter]
             f = f[freq_filter]

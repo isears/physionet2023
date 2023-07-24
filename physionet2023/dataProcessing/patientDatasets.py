@@ -234,7 +234,7 @@ class SpectrogramDataset(PatientDataset):
 
         # deal with -inf
         if (X == -np.inf).all():
-            print(f"[Allzero Warn] {selected_record} random sample has no data")
+            # print(f"[Allzero Warn] {selected_record} random sample has no data")
             X = np.zeros_like(X)
         elif (X == -np.inf).any():
             X[X == -np.inf] = X[X != -np.inf].min()
@@ -256,9 +256,8 @@ def draw_sample_spectrogram(idx: int):
 
 
 if __name__ == "__main__":
-    import sys
 
-    draw_sample_spectrogram(int(sys.argv[1]))
+    draw_sample_spectrogram(10)
     # ds = SpectrogramDataset()
 
     # for X, y in ds:

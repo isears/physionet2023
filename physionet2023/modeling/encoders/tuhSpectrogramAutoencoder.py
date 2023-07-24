@@ -18,19 +18,19 @@ class LitAutoEncoder(pl.LightningModule):
     def __init__(self):
         super().__init__()
 
-        self.encoder = torch.nn.Sequential(  # like the Composition layer you built
-            torch.nn.Conv2d(18, 32, 3, stride=2, padding=1),
+        self.encoder = torch.nn.Sequential(
+            # Input: (4, 58, 171)
+            torch.nn.Conv2d(4, 16, 3, padding=1),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(32, 64, 3, stride=2, padding=1),
+            torch.nn.MaxPool2d(2, 2),
+            torch.nn.Conv2d(16, 4, 3, padding=1),
             torch.nn.ReLU(),
-            torch.nn.Conv2d(64, 128, 7),
+            torch.nn.MaxPool2d(2, 2),
         )
         self.decoder = torch.nn.Sequential(
-            torch.nn.ConvTranspose2d(128, 64, 7),
+            torch.nn.ConvTranspose2d(4, 16, 2, stride=2, output_padding=(1, 1)),
             torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1),
-            torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(32, 18, 3, stride=2, padding=(1, 2)),
+            torch.nn.ConvTranspose2d(16, 4, 2, stride=2, output_padding=(0, 1)),
             # torch.nn.Sigmoid()
         )
 

@@ -472,12 +472,12 @@ def preprocess_data(data, sampling_frequency, utility_frequency):
         and passband[0] <= utility_frequency <= passband[1]
     ):
         data = mne.filter.notch_filter(
-            data, sampling_frequency, utility_frequency, n_jobs=4, verbose="error"
+            data, sampling_frequency, utility_frequency, n_jobs=1, verbose="error"
         )
 
     # Apply a bandpass filter.
     data = mne.filter.filter_data(
-        data, sampling_frequency, passband[0], passband[1], n_jobs=4, verbose="error"
+        data, sampling_frequency, passband[0], passband[1], n_jobs=1, verbose="error"
     )
 
     # Resample the data.

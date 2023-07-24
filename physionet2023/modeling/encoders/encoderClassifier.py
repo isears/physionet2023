@@ -5,9 +5,8 @@ from sklearn.model_selection import train_test_split
 from torchmetrics.classification import BinaryAUROC
 
 from physionet2023 import LabelType, config
-from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
-from physionet2023.dataProcessing.recordingDatasets import (
-    RecordingDataset,
+from physionet2023.dataProcessing.patientDatasets import (
+    MetadataOnlyDataset,
     SpectrogramDataset,
 )
 from physionet2023.modeling.encoders.tuhSpectrogramAutoencoder import LitAutoEncoder
@@ -19,17 +18,15 @@ class encoderClassifier(pl.LightningModule):
         super().__init__()
 
         self.autoencoder = LitAutoEncoder.load_from_checkpoint(
-            "./cache/encoder_models/checkpoints/epoch=14-step=13995.ckpt"
+            "./cache/tuh_encoder.ckpt"
         )
         self.autoencoder.freeze()
 
         # TODO: need to reduce reliance on magic numbers here
         self.fc = torch.nn.Sequential(
-            torch.nn.Linear(41344, 1000),
+            torch.nn.Linear(2352, 1000),
             torch.nn.ReLU(),
-            torch.nn.Linear(1000, 100),
-            torch.nn.ReLU(),
-            torch.nn.Linear(100, n_classes),
+            torch.nn.Linear(1000, n_classes),
             torch.nn.Sigmoid(),
         )
 
@@ -64,7 +61,7 @@ class encoderClassifier(pl.LightningModule):
             s.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=5e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-6)
         return optimizer
 
     def forward(self, X):
@@ -78,8 +75,8 @@ def single_dl_factory(pids: list, data_path: str = "./data", **ds_args):
         root_folder=data_path,
         patient_ids=pids,
         label_type=LabelType.SINGLECLASS,
-        preprocess=True,
-        last_only=True,
+        # preprocess=True,
+        # last_only=True,
         **ds_args,
     )
 

@@ -26,19 +26,19 @@ if __name__ == "__main__":
         if this_edf.shape == torch.Size([]):
             continue
 
-        assert this_edf.shape[-1] >= 30000
+        assert this_edf.shape[-1] >= (5 * 60 * 128)
 
-        overflow = this_edf.shape[-1] - 30000
+        overflow = this_edf.shape[-1] - (5 * 60 * 128)
         left_margin = int(overflow / 2)
         right_margin = this_edf.shape[-1] - left_margin
 
         this_edf = this_edf[:, left_margin:right_margin]
 
-        assert this_edf.shape[-1] == 30000
+        assert this_edf.shape[-1] == (5 * 60 * 128)
 
         spectrogram = SpectrogramDataset._to_spectrogram(this_edf)
 
-        assert spectrogram.shape == torch.Size([4, 75, 133])
+        assert spectrogram.shape == torch.Size([4, 58, 171])
 
         total_spectrograms += 1
         torch.save(spectrogram, f"./cache/tuh_cache/{idx:05d}.pt")

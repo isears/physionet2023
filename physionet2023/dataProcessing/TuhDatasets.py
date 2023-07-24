@@ -183,7 +183,7 @@ class TuhPatientDataset(torch.utils.data.Dataset):
         eeg_waveform, sfreq = self._get_physionet_channels(all_possible_edfs[0])
 
         # TODO: utility frequency of 50 Hz is just an educated guess
-        processed_signal = preprocess_data(
+        processed_signal, f = preprocess_data(
             eeg_waveform, sampling_frequency=sfreq, utility_frequency=50.0
         )
 
@@ -207,6 +207,8 @@ class TuhBestRecordingDataset(TuhPatientDataset):
                     data, f = preprocess_data(
                         edf, sampling_frequency=sfreq, utility_frequency=50.0
                     )
+
+                    assert f == 128.0
 
                     return data
 

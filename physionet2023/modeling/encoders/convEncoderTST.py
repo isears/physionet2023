@@ -6,8 +6,10 @@ from sklearn.model_selection import train_test_split
 from torchmetrics.classification import BinaryAUROC, BinaryF1Score
 
 from physionet2023 import *
-from physionet2023.dataProcessing.patientDatasets import MetadataOnlyDataset
-from physionet2023.dataProcessing.recordingDatasets import SpectrogramDataset
+from physionet2023.dataProcessing.patientDatasets import (
+    MetadataOnlyDataset,
+    SpectrogramDataset,
+)
 from physionet2023.modeling.encoders.tuhSpectrogramAutoencoder import LitAutoEncoder
 from physionet2023.modeling.scoringUtil import CompetitionScore
 
@@ -27,7 +29,7 @@ class ConvEncoderTST(pl.LightningModule):
             self.autoencoder = LitAutoEncoder()
 
         self.tst = TSTransformerEncoderClassiregressor(
-            **tst_config.generate_model_params(), feat_dim=128, max_len=364
+            **tst_config.generate_model_params(), feat_dim=4, max_len=588
         )
 
         self.scorers = [
@@ -96,17 +98,18 @@ class ConvEncoderTST(pl.LightningModule):
 
 def config_factory():
     problem_params = {
-        "lr": 1e-3,
-        "dropout": 0.1,
-        "d_model_multiplier": 8,
-        "num_layers": 3,
-        "n_heads": 16,
-        "dim_feedforward": 256,
+        "lr": 0.0008628517041227239,
+        "dropout": 0.4192821526246893,
+        "d_model_multiplier": 1,
+        "num_layers": 6,
+        "n_heads": 8,
+        "dim_feedforward": 189,
+        "batch_size": 64,
         "pos_encoding": "learnable",
-        "activation": "gelu",
+        "activation": "relu",
         "norm": "LayerNorm",
-        "optimizer_name": "AdamW",
-        "batch_size": 32,
+        "optimizer_name": "Adam",
+        "weight_decay": 1e-05,
     }
 
     tst_config = PhysionetConfig(
@@ -123,10 +126,8 @@ def single_dl_factory(
         root_folder=data_path,
         patient_ids=pids,
         label_type=tst_config.label_type,
-        preprocess=True,
         # last_only=True,
         # include_static=False,
-        quality_cutoff=0.0,
         **ds_args,
     )
 
@@ -190,7 +191,7 @@ if __name__ == "__main__":
             checkpoint_saver,
         ],
         enable_checkpointing=True,
-        val_check_interval=0.1,
+        # val_check_interval=0.1,
     )
     trainer.fit(model=model, train_dataloaders=train_dl, val_dataloaders=valid_dl)
     trainer.test(
