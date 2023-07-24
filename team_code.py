@@ -16,14 +16,15 @@ import joblib
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 
 from helper_code import *
 from physionet2023 import LabelType, config
-from physionet2023.modeling.convTST import (
+from physionet2023.modeling.encoders.convEncoderTST import (
+    ConvEncoderTST,
     config_factory,
-    lightning_tst_factory,
+    dataloader_factory,
     single_dl_factory,
-    train_fn,
 )
 from physionet2023.modeling.scoringUtil import (
     regression_to_probability,
@@ -39,20 +40,39 @@ from physionet2023.modeling.scoringUtil import (
 
 # Train your model.
 def train_challenge_model(data_folder, model_folder, verbose):
+    checkpoint_saver = ModelCheckpoint(
+        save_top_k=1,
+        monitor="val_loss",
+        mode="min",
+    )
+
     trainer = pl.Trainer(
-        max_epochs=1,
-        accelerator="gpu",
+        max_epochs=100,
         logger=False,
-        devices=1,
-        gradient_clip_val=4.0,
-        gradient_clip_algorithm="norm",
+        callbacks=[
+            EarlyStopping(
+                monitor="val_loss",
+                mode="min",
+                verbose=True,
+                patience=10,
+                check_finite=False,
+            ),
+            checkpoint_saver,
+        ],
+        enable_checkpointing=True,
+        val_check_interval=0.1,
     )
     tst_config = config_factory()
-    dl = single_dl_factory(tst_config, pids=None, data_path=data_folder)
-    model = lightning_tst_factory(tst_config, dl.dataset)
-    trainer.fit(model, train_dataloaders=dl)
+    train_dl, valid_dl = dataloader_factory(
+        tst_config, data_path=data_folder, test_size=0.1
+    )
+    model = ConvEncoderTST(tst_config, pretrained=False)
+    trainer.fit(model, train_dataloaders=train_dl, val_dataloaders=valid_dl)
 
-    torch.save(model.state_dict(), f"{model_folder}/state_dict")
+    torch.save(
+        torch.load(checkpoint_saver.best_model_path)["state_dict"],
+        f"{model_folder}/state_dict",
+    )
 
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
@@ -73,13 +93,14 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
         tst_config,
         [patient_id],
         data_folder,
-        quality_cutoff=0.0,
+        # Make predictions off the last (presumed most informative) recording
+        # last_only=True,
     )
 
     # Need to manually override the label type so that the dataset doesn't try to access labels
     dl.dataset.label_type = LabelType.DUMMY
 
-    model = lightning_tst_factory(tst_config, dl.dataset)
+    model = ConvEncoderTST(tst_config, pretrained=False)
     model.load_state_dict(models)
 
     model = model.eval()
@@ -101,7 +122,6 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
             # pred = preds[0]
 
             outcome_probability = float(torch.cat(preds, dim=0).mean().cpu())
-
 
             predicted_CPC = (outcome_probability * 4) + 1
             outcome_binary = int(outcome_probability > 0.5)
