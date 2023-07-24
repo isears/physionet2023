@@ -2,7 +2,7 @@ import skorch
 from skorch.callbacks import EarlyStopping
 import torch
 from torch.nn.modules import TransformerEncoder
-from physionet2023.dataProcessing.TuhDatasets import load_all_psd
+from physionet2023.dataProcessing.TuhDatasets import load_tuh_psd
 
 
 class SimplePsdAutoencoder(torch.nn.Module):
@@ -40,7 +40,7 @@ class AutoEncoderNet(skorch.NeuralNet):
         return loss_reconstruction + loss_l1
 
 if __name__ == "__main__":
-    X = load_all_psd()
+    X = load_tuh_psd()
 
     m =  AutoEncoderNet(
         SimplePsdAutoencoder,

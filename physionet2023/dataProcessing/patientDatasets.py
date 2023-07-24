@@ -10,7 +10,10 @@ from helper_code import (
     preprocess_data,
     reduce_channels,
 )
+from physionet2023 import LabelType
 from physionet2023.dataProcessing.datasets import PatientDataset
+from physionet2023 import config
+from tqdm import tqdm
 
 
 class AvgFFTDataset(PatientDataset):
@@ -151,6 +154,8 @@ class SpectrogramDataset(PatientDataset):
         self.f_min = f_min
         self.f_max = f_max
 
+        self.sampling_frequency = 128
+
         self.used_channels = ["F3", "P3", "F4", "P4"]
 
         sample_X, _ = self.__getitem__(0)
@@ -241,6 +246,107 @@ class SpectrogramDataset(PatientDataset):
 
         return torch.tensor(X).float(), self._get_label(patient_id)
 
+
+class PhysionetPsdDataset(PatientDataset):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        self.used_channels = ["F3", "P3", "F4", "P4"]
+
+    def process_metadata(self, patient_metadata, recording_metadata):
+        age = int(patient_metadata['Age']) / 90.
+        sex = float(patient_metadata['Sex'] == 'Female')
+
+        rosc = float(patient_metadata['ROSC'])
+        if rosc == float('nan'):
+            rosc = 0.0
+        else:
+            # TODO: need to determine max rosc
+            rosc = rosc / 60.
+
+        ohca = float(patient_metadata['OHCA'] == 'True')
+        vfib = float(patient_metadata['VFib'] == 'True')
+
+        ttm = float()
+
+        # TODO
+        ...
+
+
+    def __getitem__(self, index: int):
+        patient_metadata, recording_metadata = super().__getitem__(index)
+        patient_id = self.patient_ids[index]
+
+        qualified_records = recording_metadata[
+            (recording_metadata[self.used_channels].all(axis=1))
+            & (recording_metadata["length"] >= self.signal_length)
+        ]
+
+        if len(qualified_records) == 0:  # Can't always get what you want
+            qualified_records = recording_metadata[
+                (recording_metadata[self.used_channels].any(axis=1))
+                & (recording_metadata["length"] >= self.signal_length)
+            ]
+
+        if len(qualified_records) == 0:
+            print(f"[Warning] no qualified records found, returning zero sepctrogram")
+            return torch.zeros(self.dims).float(), self._get_label(patient_id)
+
+        selected_record = qualified_records[
+            qualified_records.etime == qualified_records.etime.max()
+        ]["name"].item()
+
+        recording_location = f"{self.root_folder}/{patient_id}/{selected_record}"
+        recording_data, channels, sampling_frequency = load_recording_data(
+            recording_location
+        )
+
+        utility_frequency = get_utility_frequency(recording_location + ".hea")
+
+        # Fix channels, if necessary
+        if all(channel in channels for channel in self.used_channels):
+            recording_data, channels = reduce_channels(
+                recording_data, channels, self.used_channels
+            )
+            recording_data, sampling_frequency = preprocess_data(
+                recording_data, sampling_frequency, utility_frequency
+            )
+
+        else:
+            print(f"[Chan Warn] Desired channels not available!")
+
+        if sampling_frequency != self.sampling_frequency:
+            print(
+                f"[Freq Warn] {selected_record} f of {sampling_frequency} != {self.sampling_frequency}"
+            )
+
+        psd, _ = mne.time_frequency.psd_array_welch(
+            recording_data.numpy(), sfreq=self.sampling_frequency, fmin=0.5, fmax=30.0, verbose=False
+        )
+
+        return psd
+
+    
+
+def load_physionet_psd():
+    ds = PhysionetPsdDataset()
+
+    dl = torch.utils.data.DataLoader(
+        ds,
+        num_workers=config.cores_available,
+        batch_size=32,
+    )
+
+    psds = list()
+    metadatas = list()
+    ys = list()
+
+    for psd, metadata, y in tqdm(dl, total = len(dl)):
+        psds.append(psd)
+        metadatas.append(metadata)
+        ys.append(y)
+
+    return torch.concat(psds).float(), torch.concat(metadatas).float(), torch.concat(ys).float()
 
 def draw_sample_spectrogram(idx: int):
     ds = SpectrogramDataset()

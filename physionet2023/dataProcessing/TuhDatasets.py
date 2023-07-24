@@ -265,7 +265,7 @@ class TuhPsdCacheDataset(torch.utils.data.Dataset):
 
         return psd_norm
 
-def load_all_psd():
+def load_tuh_psd():
     ds = TuhPsdCacheDataset()
 
     dl = torch.utils.data.DataLoader(

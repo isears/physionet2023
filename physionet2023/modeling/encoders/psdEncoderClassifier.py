@@ -2,7 +2,7 @@ import skorch
 from skorch.callbacks import EarlyStopping
 import torch
 from torch.nn.modules import TransformerEncoder
-from physionet2023.dataProcessing.TuhDatasets import load_all_psd
+from physionet2023.dataProcessing.patientDatasets import load_physionet_psd
 
 
 class SimplePsdAutoencoder(torch.nn.Module):
@@ -19,6 +19,7 @@ class SimplePsdAutoencoder(torch.nn.Module):
 
         if pretrained:
             self.encoder.load_state_dict("cache/psd_encoder.pt")
+            self.encoder.freeze()
 
         self.classification_head = torch.nn.Sequential(
             torch.nn.Linear(encoding_dim, encoding_dim),
@@ -38,7 +39,7 @@ class SimplePsdAutoencoder(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    X = load_all_psd()
+    X, metadata, y = load_physionet_psd()
 
     m =  skorch.NeuralNetBinaryClassifier(
         SimplePsdAutoencoder,
