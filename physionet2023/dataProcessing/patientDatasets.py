@@ -3,6 +3,7 @@ import mne
 import numpy as np
 import torch
 from scipy.signal import spectrogram
+from tqdm import tqdm
 
 from helper_code import (
     get_utility_frequency,
@@ -10,10 +11,8 @@ from helper_code import (
     preprocess_data,
     reduce_channels,
 )
-from physionet2023 import LabelType
+from physionet2023 import LabelType, config
 from physionet2023.dataProcessing.datasets import PatientDataset
-from physionet2023 import config
-from tqdm import tqdm
 
 
 class AvgFFTDataset(PatientDataset):
@@ -253,25 +252,38 @@ class PhysionetPsdDataset(PatientDataset):
 
         self.used_channels = ["F3", "P3", "F4", "P4"]
 
-    def process_metadata(self, patient_metadata, recording_metadata):
-        age = int(patient_metadata['Age']) / 90.
-        sex = float(patient_metadata['Sex'] == 'Female')
+    def process_metadata(self, patient_metadata, stime):
+        age = float(patient_metadata["Age"])
 
-        rosc = float(patient_metadata['ROSC'])
-        if rosc == float('nan'):
+        if age == float("nan"):
+            age = 0.5
+        else:
+            age = age / 90.0
+
+        sex = float(patient_metadata["Sex"] == "Female")
+
+        rosc = float(patient_metadata["ROSC"])
+        if rosc == float("nan"):
             rosc = 0.0
         else:
             # TODO: need to determine max rosc
-            rosc = rosc / 60.
+            rosc = rosc / 60.0
 
-        ohca = float(patient_metadata['OHCA'] == 'True')
-        vfib = float(patient_metadata['VFib'] == 'True')
+        ohca = float(patient_metadata["OHCA"] == "True")
+        shockable = float(patient_metadata["Shockable Rhythm"] == "True")
 
-        ttm = float()
+        ttm = float(patient_metadata["TTM"])
 
-        # TODO
-        ...
+        if ttm == 33.0:
+            ttm = 0.0
+        elif ttm == 36.0:
+            ttm = 1.0
+        else:
+            ttm = 0.5
 
+        t = float(stime.total_seconds() / (72 * 60 * 60))
+
+        return torch.Tensor([age, sex, rosc, ohca, shockable, ttm, t]).float()
 
     def __getitem__(self, index: int):
         patient_metadata, recording_metadata = super().__getitem__(index)
@@ -294,9 +306,12 @@ class PhysionetPsdDataset(PatientDataset):
 
         selected_record = qualified_records[
             qualified_records.etime == qualified_records.etime.max()
-        ]["name"].item()
+        ].iloc[0]
 
-        recording_location = f"{self.root_folder}/{patient_id}/{selected_record}"
+        selected_record_name = selected_record["name"]
+        selected_record_stime = selected_record["stime"]
+
+        recording_location = f"{self.root_folder}/{patient_id}/{selected_record_name}"
         recording_data, channels, sampling_frequency = load_recording_data(
             recording_location
         )
@@ -317,16 +332,23 @@ class PhysionetPsdDataset(PatientDataset):
 
         if sampling_frequency != self.sampling_frequency:
             print(
-                f"[Freq Warn] {selected_record} f of {sampling_frequency} != {self.sampling_frequency}"
+                f"[Freq Warn] {selected_record_name} f of {sampling_frequency} != {self.sampling_frequency}"
             )
 
         psd, _ = mne.time_frequency.psd_array_welch(
-            recording_data.numpy(), sfreq=self.sampling_frequency, fmin=0.5, fmax=30.0, verbose=False
+            recording_data,
+            sfreq=self.sampling_frequency,
+            fmin=0.5,
+            fmax=30.0,
+            verbose=False,
         )
 
-        return psd
+        return (
+            psd,
+            self.process_metadata(patient_metadata, selected_record_stime),
+            self._get_label(patient_id),
+        )
 
-    
 
 def load_physionet_psd():
     ds = PhysionetPsdDataset()
@@ -341,12 +363,17 @@ def load_physionet_psd():
     metadatas = list()
     ys = list()
 
-    for psd, metadata, y in tqdm(dl, total = len(dl)):
+    for psd, metadata, y in tqdm(dl, total=len(dl)):
         psds.append(psd)
         metadatas.append(metadata)
         ys.append(y)
 
-    return torch.concat(psds).float(), torch.concat(metadatas).float(), torch.concat(ys).float()
+    return (
+        torch.concat(psds).float(),
+        torch.concat(metadatas).float(),
+        torch.concat(ys).float(),
+    )
+
 
 def draw_sample_spectrogram(idx: int):
     ds = SpectrogramDataset()
