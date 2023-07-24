@@ -6,9 +6,10 @@ from physionet2023.dataProcessing.TuhDatasets import load_all_psd
 
 
 class SimplePsdAutoencoder(torch.nn.Module):
-    def __init__(self, n_channels: int, spectrum_size: int, encoding_dim: int) -> None:
+    def __init__(self, n_channels: int, spectrum_size: int, encoding_dim: int, pretrained=False) -> None:
         super().__init__()
 
+        # TODO: should be coupled with psdEncoder
         self.encoder = torch.nn.Sequential(
             torch.nn.Linear(n_channels * spectrum_size, 32),
             torch.nn.ReLU(),
@@ -16,11 +17,14 @@ class SimplePsdAutoencoder(torch.nn.Module):
             torch.nn.ReLU(),
         )
 
-        self.decoder = torch.nn.Sequential(
-            torch.nn.Linear(encoding_dim, 32),
+        if pretrained:
+            self.encoder.load_state_dict("cache/psd_encoder.pt")
+
+        self.classification_head = torch.nn.Sequential(
+            torch.nn.Linear(encoding_dim, encoding_dim),
             torch.nn.ReLU(),
-            torch.nn.Linear(32, n_channels * spectrum_size),
-            #torch.nn.Tanh(),
+            torch.nn.Linear(encoding_dim, 1),
+            torch.nn.Sigmoid(),
         )
 
     def forward(self, X):
@@ -32,17 +36,11 @@ class SimplePsdAutoencoder(torch.nn.Module):
 
         return x_hat, z
 
-class AutoEncoderNet(skorch.NeuralNet):
-    def get_loss(self, y_pred, y_true, *args, **kwargs):
-        decoded, encoded = y_pred  # <- unpack the tuple that was returned by `forward`
-        loss_reconstruction = super().get_loss(decoded, y_true, *args, **kwargs)
-        loss_l1 = 1e-3 * torch.abs(encoded).sum()
-        return loss_reconstruction + loss_l1
 
 if __name__ == "__main__":
     X = load_all_psd()
 
-    m =  AutoEncoderNet(
+    m =  skorch.NeuralNetBinaryClassifier(
         SimplePsdAutoencoder,
         module__n_channels=X.shape[-2],
         module__spectrum_size = X.shape[-1],
