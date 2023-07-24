@@ -9,7 +9,8 @@ from physionet2023 import config
 #     RecordingDataset,
 #     SpectrogramDataset,
 # )
-from physionet2023.dataProcessing.patientDatasets import SpectrogramDataset
+#from physionet2023.dataProcessing.patientDatasets import SpectrogramDataset
+from physionet2023.dataProcessing.cachedDataset import PhysionetPreprocessedDataset
 from physionet2023.dataProcessing.TuhDatasets import TuhPreprocessedDataset
 
 
@@ -20,18 +21,18 @@ class LitAutoEncoder(pl.LightningModule):
 
         self.encoder = torch.nn.Sequential(
             # Input: (4, 58, 171)
-            torch.nn.Conv2d(4, 16, 3, padding=1),
+            torch.nn.Conv2d(4, 64, 3, padding=1),
             torch.nn.ReLU(),
             torch.nn.MaxPool2d(2, 2),
-            torch.nn.Conv2d(16, 4, 3, padding=1),
+            torch.nn.Conv2d(64, 16, 3, padding=1),
             torch.nn.ReLU(),
-            torch.nn.MaxPool2d(2, 2),
+            torch.nn.MaxPool2d(2,2),
         )
         self.decoder = torch.nn.Sequential(
-            torch.nn.ConvTranspose2d(4, 16, 2, stride=2, output_padding=(1, 1)),
+            torch.nn.ConvTranspose2d(16, 64, 2, stride=2, output_padding=1),
             torch.nn.ReLU(),
-            torch.nn.ConvTranspose2d(16, 4, 2, stride=2, output_padding=(0, 1)),
-            # torch.nn.Sigmoid()
+            torch.nn.ConvTranspose2d(64, 4, 2, stride=2, output_padding=(0, 1)),
+            torch.nn.Tanh(),  # TanH b/c final images are normalized (-1, 1)
         )
 
         self.train_mse = torchmetrics.MeanSquaredError()
@@ -68,13 +69,13 @@ class LitAutoEncoder(pl.LightningModule):
         self.valid_mse.reset()
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = torch.optim.Adam(self.parameters(), lr=1e-5)
         return optimizer
 
 
 if __name__ == "__main__":
     tuh_ds = TuhPreprocessedDataset()
-    physionet_ds = SpectrogramDataset()
+    physionet_ds = PhysionetPreprocessedDataset()
 
     tuh_dl = torch.utils.data.DataLoader(
         tuh_ds,

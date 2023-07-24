@@ -12,6 +12,7 @@ from physionet2023.dataProcessing.patientDatasets import (
 )
 from physionet2023.modeling.encoders.tuhSpectrogramAutoencoder import LitAutoEncoder
 from physionet2023.modeling.scoringUtil import CompetitionScore
+from physionet2023.dataProcessing.cachedDataset import PhysionetPreprocessedDataset
 
 
 class ConvEncoderTST(pl.LightningModule):
@@ -104,7 +105,7 @@ def config_factory():
         "num_layers": 6,
         "n_heads": 8,
         "dim_feedforward": 189,
-        "batch_size": 64,
+        "batch_size": 16,
         "pos_encoding": "learnable",
         "activation": "relu",
         "norm": "LayerNorm",
@@ -122,13 +123,8 @@ def config_factory():
 def single_dl_factory(
     tst_config: PhysionetConfig, pids: list, data_path: str = "./data", **ds_args
 ) -> torch.utils.data.DataLoader:
-    ds = SpectrogramDataset(
-        root_folder=data_path,
+    ds = PhysionetPreprocessedDataset(
         patient_ids=pids,
-        label_type=tst_config.label_type,
-        # last_only=True,
-        # include_static=False,
-        **ds_args,
     )
 
     dl = torch.utils.data.DataLoader(
@@ -148,11 +144,11 @@ def dataloader_factory(
     deterministic_split=False,
     test_size=0.2,
 ):
-    pids = MetadataOnlyDataset(root_folder=data_path).patient_ids
+    pids = PhysionetPreprocessedDataset().patient_ids
 
     if deterministic_split:
         train_pids, valid_pids = train_test_split(
-            pids, random_state=1, test_size=test_size
+            pids, random_state=42, test_size=test_size
         )
     else:
         train_pids, valid_pids = train_test_split(pids, test_size=test_size)
@@ -167,7 +163,7 @@ def dataloader_factory(
 
 
 if __name__ == "__main__":
-    train_dl, valid_dl = dataloader_factory(config_factory())
+    train_dl, valid_dl = dataloader_factory(config_factory(), deterministic_split=True)
 
     model = ConvEncoderTST(config_factory(), pretrained=True)
     checkpoint_saver = ModelCheckpoint(

@@ -232,9 +232,19 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
         return len(self.fnames)
 
     def __getitem__(self, index: int):
-        data = torch.load(self.fnames[index])
+        X = torch.load(self.fnames[index]).float()
 
-        return data.float()
+        chan_means = X.mean(dim=1, keepdim=True)
+        chan_stds = X.std(dim=1, keepdim=True)
+        X_norm = (X - chan_means) / chan_stds
+
+        if torch.isnan(X_norm).any():
+            X_norm[torch.isnan(X_norm)] = 0.0
+
+        if torch.isinf(X_norm).any():
+            X_norm[torch.isinf(X_norm)] = 0.0
+
+        return X_norm
 
 
 def draw_sample_spectrogram(idx: int):
