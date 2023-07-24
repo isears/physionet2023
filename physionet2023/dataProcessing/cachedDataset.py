@@ -1,6 +1,6 @@
 import torch
 import glob
-from sklearn.utils import shuffle
+import sklearn
 
 class PhysionetPreprocessedDataset(torch.utils.data.Dataset):
     def __init__(self, path="cache/physionet_cache", shuffle=True) -> None:
@@ -9,7 +9,7 @@ class PhysionetPreprocessedDataset(torch.utils.data.Dataset):
         self.pids = [f.split("/")[-1].split("_")[0] for f in glob.glob(f"{path}/*_X.pt")]
 
         if shuffle:
-            self.pids = shuffle(self.pids, random_state=42)
+            self.pids = sklearn.utils.shuffle(self.pids, random_state=42)
 
     def __len__(self):
         return len(self.pids)
