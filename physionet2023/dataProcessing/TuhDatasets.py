@@ -7,7 +7,8 @@ import torch
 
 from helper_code import preprocess_data
 from physionet2023.dataProcessing.patientDatasets import SpectrogramDataset
-
+from physionet2023 import config
+from tqdm import tqdm
 
 class TuhPatientDataset(torch.utils.data.Dataset):
     # PIDs with insufficient channels to reconstruct the physionet bipolar channels
@@ -250,13 +251,13 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
 class TuhPsdCacheDataset(torch.utils.data.Dataset):
     def __init__(self, path="cache/tuh_psd_cache"):
         super().__init__()
-        self.fnames = [f for f in glob.glob(f"{path}*.pt") if not f.startswith("_")]
+        self.fnames = [f for f in glob.glob(f"{path}/*.pt") if not f.startswith("_")]
 
     def __len__(self):
         return len(self.fnames)
 
     def __getitem__(self, index: int):
-        psd = torch.load(self.fnames[index])
+        psd = torch.tensor(torch.load(self.fnames[index]))
 
         psd_norm = (psd - psd.mean()) / psd.std()
 
@@ -264,6 +265,21 @@ class TuhPsdCacheDataset(torch.utils.data.Dataset):
 
         return psd_norm
 
+def load_all_psd():
+    ds = TuhPsdCacheDataset()
+
+    dl = torch.utils.data.DataLoader(
+        ds,
+        num_workers=config.cores_available,
+        batch_size=32,
+    )
+
+    batches = list()
+
+    for batch in tqdm(dl, total = len(dl)):
+        batches.append(batch)
+
+    return torch.concat(batches, dim=0).float()
 
 def draw_sample_spectrogram(idx: int):
     ds = TuhPreprocessedDataset()
