@@ -1,4 +1,3 @@
-import mne
 import numpy as np
 import torch
 from tqdm import tqdm
@@ -16,10 +15,8 @@ if __name__ == "__main__":
         batch_size=1,
     )
 
-    total_psds = 0
+    total_spectrograms = 0
     total_patients = len(ds.patient_paths)
-
-    expected_shape = None
 
     for idx, edf in enumerate(tqdm(dl, total=len(ds.patient_paths))):
         this_edf = edf[0]  # Unwrap batch stack
@@ -29,17 +26,22 @@ if __name__ == "__main__":
         if this_edf.shape == torch.Size([]):
             continue
 
-        psd, _ = mne.time_frequency.psd_array_welch(
-            this_edf.numpy(), sfreq=128.0, fmin=0.5, fmax=30.0, verbose=False
-        )
+        assert this_edf.shape[-1] >= (5 * 60 * 128)
 
-        if expected_shape == None:
-            expected_shape = psd.shape
-        else:
-            assert psd.shape == expected_shape
+        overflow = this_edf.shape[-1] - (5 * 60 * 128)
+        left_margin = int(overflow / 2)
+        right_margin = this_edf.shape[-1] - left_margin
 
-        total_psds += 1
-        torch.save(psd, f"./cache/tuh_psd_cache/{idx:05d}.pt")
+        this_edf = this_edf[:, left_margin:right_margin]
 
-    print(f"Saved {total_psds} out of {total_patients} possible")
-    print(f"{total_psds / total_patients * 100} % success rate")
+        assert this_edf.shape[-1] == (5 * 60 * 128)
+
+        spectrogram = SpectrogramDataset._to_spectrogram(this_edf)
+
+        assert spectrogram.shape == torch.Size([4, 58, 171])
+
+        total_spectrograms += 1
+        torch.save(spectrogram, f"./cache/tuh_cache/{idx:05d}.pt")
+
+    print(f"Saved {total_spectrograms} out of {total_patients} possible")
+    print(f"{total_spectrograms / total_patients * 100} % success rate")

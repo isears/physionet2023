@@ -201,8 +201,8 @@ class TuhBestRecordingDataset(TuhPatientDataset):
             ]
 
             for edf, sfreq in all_possible_edfs:
-                # Need at least as much recording data as physionet
-                if (edf.shape[-1] / sfreq) >= (5 * 60):
+                # Min 10 minutes data
+                if (edf.shape[-1] / sfreq) >= (10 * 60):
                     # TODO: utility frequency is just a guess
                     data, f = preprocess_data(
                         edf, sampling_frequency=sfreq, utility_frequency=50.0
@@ -245,6 +245,24 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
             X_norm[torch.isinf(X_norm)] = 0.0
 
         return X_norm
+
+
+class TuhPsdCacheDataset(torch.utils.data.Dataset):
+    def __init__(self, path="cache/tuh_psd_cache"):
+        super().__init__()
+        self.fnames = [f for f in glob.glob(f"{path}*.pt") if not f.startswith("_")]
+
+    def __len__(self):
+        return len(self.fnames)
+
+    def __getitem__(self, index: int):
+        psd = torch.load(self.fnames[index])
+
+        psd_norm = (psd - psd.mean()) / psd.std()
+
+        assert not psd_norm.isnan().any()
+
+        return psd_norm
 
 
 def draw_sample_spectrogram(idx: int):
