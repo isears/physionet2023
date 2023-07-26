@@ -255,7 +255,7 @@ class PhysionetPsdDataset(PatientDataset):
     def process_metadata(self, patient_metadata, stime):
         age = float(patient_metadata["Age"])
 
-        if age == float("nan"):
+        if np.isnan(age):
             age = 0.5
         else:
             age = age / 90.0
@@ -263,11 +263,11 @@ class PhysionetPsdDataset(PatientDataset):
         sex = float(patient_metadata["Sex"] == "Female")
 
         rosc = float(patient_metadata["ROSC"])
-        if rosc == float("nan"):
+        if np.isnan(rosc):
             rosc = 0.0
         else:
             # TODO: need to determine max rosc
-            rosc = rosc / 60.0
+            rosc = rosc / 120.0
 
         ohca = float(patient_metadata["OHCA"] == "True")
         shockable = float(patient_metadata["Shockable Rhythm"] == "True")
@@ -281,7 +281,7 @@ class PhysionetPsdDataset(PatientDataset):
         else:
             ttm = 0.5
 
-        t = float(stime.total_seconds() / (72 * 60 * 60))
+        t = float(stime.total_seconds() / (30 * 24 * 60 * 60))
 
         return torch.Tensor([age, sex, rosc, ohca, shockable, ttm, t]).float()
 
