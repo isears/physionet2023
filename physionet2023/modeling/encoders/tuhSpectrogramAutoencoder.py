@@ -4,10 +4,6 @@ import torchmetrics
 from pytorch_lightning.callbacks import EarlyStopping
 
 from physionet2023 import config
-from physionet2023.dataProcessing.recordingDatasets import (
-    RecordingDataset,
-    SpectrogramDataset,
-)
 from physionet2023.dataProcessing.TuhDatasets import TuhPreprocessedDataset
 
 
@@ -72,18 +68,9 @@ class LitAutoEncoder(pl.LightningModule):
 
 if __name__ == "__main__":
     tuh_ds = TuhPreprocessedDataset()
-    physionet_ds = SpectrogramDataset(preprocess=True, last_only=True)
 
     tuh_dl = torch.utils.data.DataLoader(
         tuh_ds,
-        num_workers=config.cores_available,
-        batch_size=32,
-        # Only pin memory if we have GPUs
-        pin_memory=(config.gpus_available > 0),
-    )
-
-    physionet_dl = torch.utils.data.DataLoader(
-        physionet_ds,
         num_workers=config.cores_available,
         batch_size=32,
         # Only pin memory if we have GPUs
@@ -95,11 +82,11 @@ if __name__ == "__main__":
 
     trainer = pl.Trainer(
         # limit_train_batches=100,
-        max_epochs=500,
+        max_epochs=100,
         logger=False,
         callbacks=[
             EarlyStopping(
-                monitor="val_loss",
+                monitor="train_loss",
                 mode="min",
                 verbose=True,
                 patience=10,
@@ -108,6 +95,4 @@ if __name__ == "__main__":
         ],
         default_root_dir="cache/encoder_models",
     )
-    trainer.fit(
-        model=autoencoder, train_dataloaders=tuh_dl, val_dataloaders=physionet_dl
-    )
+    trainer.fit(model=autoencoder, train_dataloaders=tuh_dl)

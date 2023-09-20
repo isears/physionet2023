@@ -244,6 +244,9 @@ class TuhPreprocessedDataset(torch.utils.data.Dataset):
     def __getitem__(self, index: int):
         data = torch.load(self.fnames[index])
 
+        if data.shape != torch.Size([18, 75, 133]):
+            print(f"[-] Warn data at {index} corrupted")
+            return torch.zeros(torch.Size([18, 75, 133])).float()
         return data.float()
 
 
